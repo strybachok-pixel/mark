@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Лабіринт Тіней: Проклятий Бункер</title>
+    <!-- PeerJS CDN для P2P Онлайн-мультиплеєру без сервера -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            margin: 0;
+            padding: 0;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            background-color: #050505;
+            color: #d1d1d1;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #000;
+        }
+
+        canvas#raycaster {
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+            display: block;
+        }
+
+        /* Ефекти хоррору на екрані */
+        .vignette {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            background: radial-gradient(circle, transparent 40%, rgba(0,0,0,0.85) 90%, rgba(0,0,0,1) 100%);
+            z-index: 5;
+        }
+
+        .glitch-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            background: rgba(255, 0, 0, 0);
+            mix-blend-mode: color-dodge;
+            z-index: 6;
+            transition: background 0.1s ease;
+        }
+
+        /* HUD Інтерфейс під час гри */
+        #hud {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 10;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            color: #a8a8a8;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px #000;
+        }
+
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .status-box {
+            background: rgba(10, 10, 10, 0.75);
+            border: 1px solid #333;
+            padding: 12px 18px;
+            border-radius: 4px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.8);
+        }
+
+        .bar-container {
+            width: 180px;
+            height: 12px;
+            background: #222;
+            border: 1px solid #444;
+            margin-top: 5px;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            width: 100%;
+            transition: width 0.2s linear;
+        }
+
+        #stamina-fill { background: #3b82f6; }
+        #battery-fill { background: #eab308; }
+
+        .hud-bottom {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        .keys-counter {
+            font-size: 1.4rem;
+            color: #ef4444;
+            letter-spacing: 1px;
+        }
+
+        .message-log {
+            position: absolute;
+            top: 20%;
+            width: 100%;
+            text-align: center;
+            font-size: 1.2rem;
+            color: #f87171;
+            text-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        /* Лобі та Стартовий екран */
+        .overlay-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(5, 5, 5, 0.95);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .panel {
+            background: #111;
+            border: 1px solid #333;
+            padding: 30px;
+            border-radius: 8px;
+            max-width: 550px;
+            width: 100%;
+            box-shadow: 0 0 30px rgba(255, 0, 0, 0.15);
+        }
+
+        h1 {
+            color: #dc2626;
+            font-size: 2.2rem;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-shadow: 0 0 10px rgba(220, 38, 38, 0.5);
+        }
+
+        p.story {
+            font-size: 0.95rem;
+            line-height: 1.5;
+            color: #9ca3af;
+            margin-bottom: 25px;
+            text-align: justify;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            color: #6b7280;
+            margin-bottom: 5px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px 14px;
+            background: #1a1a1a;
+            border: 1px solid #374151;
+            color: #fff;
+            border-radius: 4px;
+            font-size: 1rem;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: #dc2626;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 12px;
+            background: #991b1b;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+        }
+
+        button:hover {
+            background: #dc2626;
+            box-shadow: 0 0 12px rgba(220, 38, 38, 0.5);
+        }
+
+        button.secondary {
+            background: #1f2937;
+            color: #9ca3af;
+        }
+
+        button.secondary:hover {
+            background: #374151;
+            color: #fff;
+        }
+
+        .code-display {
+            background: #000;
+            padding: 10px;
+            border: 1px dashed #dc2626;
+            color: #ef4444;
+            font-size: 1.4rem;
+            letter-spacing: 3px;
+            margin: 15px 0;
+            user-select: all;
+        }
+
+        /* Приціл та сенсорне управління */
+        .crosshair {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 6px; height: 6px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 8;
+        }
+
+        /* Сенсорні кнопки для мобільних */
+        #touch-controls {
+            position: absolute;
+            bottom: 20px; left: 20px; right: 20px;
+            display: none;
+            justify-content: space-between;
+            pointer-events: none;
+            z-index: 12;
+        }
+
+        .touch-btn {
+            width: 60px; height: 60px;
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            font-size: 1.2rem;
+            pointer-events: auto;
+        }
+
+        @media (max-width: 768px) {
+            #touch-controls { display: flex; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <!-- 3D Canvas Raycaster -->
+    <canvas id="raycaster"></canvas>
+
+    <!-- Візуальні хорор ефекти -->
+    <div class="vignette"></div>
+    <div id="glitch" class="glitch-overlay"></div>
+    <div class="crosshair"></div>
+
+    <!-- HUD під час ігрового процесу -->
+    <div id="hud" style="display: none;">
+        <div class="hud-top">
+            <div class="status-box">
+                <div>ВИТРИВАЛІСТЬ (SHIFT)</div>
+                <div class="bar-container"><div id="stamina-fill" class="bar-fill"></div></div>
+                <div style="margin-top: 8px;">ЛІХТАРИК (F)</div>
+                <div class="bar-container"><div id="battery-fill" class="bar-fill"></div></div>
+            </div>
+            <div class="status-box" style="text-align: right;">
+                <div id="partner-status">ПАРТНЕР: <span style="color:#ef4444;">ПОШУК...</span></div>
+                <div id="monster-warning" style="color: #666; font-size:0.8rem; margin-top:5px;">ТИША В БУНКЕРІ</div>
+            </div>
+        </div>
+
+        <div id="message-log" class="message-log"></div>
+
+        <div class="hud-bottom">
+            <div class="status-box">
+                <div class="keys-counter">КЛЮЧІ-КАРТИ: <span id="keys-count">0</span> / 5</div>
+            </div>
+            <div style="font-size:0.8rem; color:#6b7280; text-align:right;">
+                [WASD] - Рух | [F] - Ліхтарик | [E] - Підняти
+            </div>
+        </div>
+    </div>
+
+    <!-- Мобільні кнопки -->
+    <div id="touch-controls">
+        <div class="touch-btn" id="btn-flashlight">F</div>
+        <div class="touch-btn" id="btn-action">E</div>
+    </div>
+
+    <!-- Головне Меню / Лобі -->
+    <div id="lobby-screen" class="overlay-screen">
+        <div class="panel">
+            <h1>ЛАБІРИНТ ТІНЕЙ</h1>
+            <p style="color:#dc2626; font-size:0.8rem; margin-bottom:15px; letter-spacing:1px;">ПРОКЛЯТИЙ БУНКЕР</p>
+            <p class="story">
+                Ви опинилися закритими в радянському підземному бункері. Повітря отруєне, ліхтарики розряджаються. Щоб вижити, зберіть <b>5 червоних ключів-карт</b> та дістаньтеся виходу. Але будьте обережні: у пітьмі коридорів полює <b>Тінь</b>, яка реагує на рух та світло...
+            </p>
+
+            <div class="input-group">
+                <label>ВАШЕ ІМ'Я / ПСЕВДОНІМ:</label>
+                <input type="text" id="player-name" value="Сталкер" maxlength="12">
+            </div>
+
+            <div id="lobby-actions">
+                <div class="btn-group">
+                    <button id="btn-create">Створити Гру</button>
+                    <button id="btn-join-mode" class="secondary">Приєднатися</button>
+                </div>
+                <button id="btn-single" class="secondary" style="margin-top:10px; width:100%;">Одиночний Режим</button>
+            </div>
+
+            <!-- Повідомлення про обмеження мережі / iFrame -->
+            <div id="lobby-error" style="color: #f87171; font-size: 0.85rem; margin-top: 12px; display: none; background: rgba(220,38,38,0.15); padding: 10px; border-radius: 4px; border: 1px solid #ef4444; text-align: center;"></div>
+
+            <!-- Скрін створення кімнати -->
+            <div id="create-section" style="display:none; margin-top:15px;">
+                <p style="font-size:0.9rem; color:#9ca3af;">Надішліть цей код напарнику:</p>
+                <div id="room-code-display" class="code-display">---</div>
+                <p style="font-size:0.8rem; color:#6b7280;">Очікування підключення партнера...</p>
+                <button id="btn-cancel-create" class="secondary" style="margin-top:15px; width:100%;">Назад</button>
+            </div>
+
+            <!-- Скрін приєднання -->
+            <div id="join-section" style="display:none; margin-top:15px;">
+                <div class="input-group">
+                    <label>ВВЕДІТЬ КОД КІМНАТИ:</label>
+                    <input type="text" id="join-code-input" placeholder="Код кімнати...">
+                </div>
+                <div class="btn-group">
+                    <button id="btn-connect">Увійти</button>
+                    <button id="btn-cancel-join" class="secondary">Назад</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Екран кінця гри / Перемоги -->
+    <div id="end-screen" class="overlay-screen" style="display: none;">
+        <div class="panel">
+            <h1 id="end-title">ВИ ЗАГИНУЛИ</h1>
+            <p id="end-message" class="story" style="text-align:center;"></p>
+            <button onclick="location.reload();">Спробувати Знову</button>
+        </div>
+    </div>
+</div>
+
+<script>
+class SoundEngine {
+    constructor() {
+        this.ctx = null;
+    }
+
+    init() {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    // Крок гравця
+    playFootstep() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(80 + Math.random() * 20, this.ctx.currentTime);
+        gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.15);
+    }
+
+    // Підборі ключа або батарейки
+    playPickup() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.2);
+    }
+
+    // Страшний крик/звук монстра поруч (JumpScare / Attack)
+    playScream() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(600, this.ctx.currentTime + 0.3);
+        osc.frequency.linearRampToValueAtTime(100, this.ctx.currentTime + 0.6);
+        
+        gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.6);
+        
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.6);
+    }
+
+    // Побиття серця від жаху
+    playHeartbeat() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(55, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.15);
+    }
+}
+
+const audio = new SoundEngine();
+
+// 1 = Стіна, 0 = Коридор, 2 = Вихідні Гермодвері
+const MAP_SIZE = 16;
+const MAP = [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,1,0,0,0,0,0,1,0,0,0,0,1],
+    [1,0,1,0,1,0,1,1,1,0,1,0,1,1,0,1],
+    [1,0,1,0,0,0,0,0,1,0,0,0,1,0,0,1],
+    [1,0,1,1,1,1,1,0,1,1,1,0,1,0,1,1],
+    [1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,1],
+    [1,1,1,1,0,1,1,1,1,0,1,1,1,1,0,1],
+    [1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1],
+    [1,0,1,1,1,1,0,1,1,1,1,1,0,1,0,1],
+    [1,0,1,0,0,0,0,1,0,0,0,1,0,0,0,1],
+    [1,0,1,0,1,1,1,1,0,1,0,1,1,1,0,1],
+    [1,0,0,0,1,0,0,0,0,1,0,0,0,1,0,1],
+    [1,1,1,0,1,0,1,1,1,1,1,1,0,1,0,1],
+    [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+    [1,0,1,1,1,0,0,0,1,1,1,1,1,1,2,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+// Програмна генерація текстури бетонної стіни із плямами крові
+const TEX_SIZE = 64;
+function createWallTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = TEX_SIZE;
+    canvas.height = TEX_SIZE;
+    const ctx = canvas.getContext('2d');
+
+    // Градієнт старого бетону
+    ctx.fillStyle = '#222225';
+    ctx.fillRect(0, 0, TEX_SIZE, TEX_SIZE);
+
+    // Додаємо шум/тріщини
+    for (let i = 0; i < 300; i++) {
+        const x = Math.floor(Math.random() * TEX_SIZE);
+        const y = Math.floor(Math.random() * TEX_SIZE);
+        const shade = Math.floor(Math.random() * 40 + 15);
+        ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
+        ctx.fillRect(x, y, 1, 1);
+    }
+
+    // Тріщини на стінах
+    ctx.strokeStyle = '#111';
+    ctx.beginPath();
+    ctx.moveTo(10, 0); ctx.lineTo(15, 20); ctx.lineTo(8, 40);
+    ctx.stroke();
+
+    // Плями іржі/крові
+    ctx.fillStyle = 'rgba(120, 10, 10, 0.4)';
+    ctx.beginPath();
+    ctx.arc(40, 45, 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    return ctx.getImageData(0, 0, TEX_SIZE, TEX_SIZE);
+}
+
+const wallTextureData = createWallTexture();
+
+const player = {
+    x: 1.5,
+    y: 1.5,
+    angle: 0,
+    stamina: 100,
+    flashlight: true,
+    battery: 100,
+    keysCollected: 0,
+    isAlive: true,
+    name: 'Гравець'
+};
+
+const partner = {
+    x: -1,
+    y: -1,
+    angle: 0,
+    flashlight: true,
+    isAlive: true,
+    name: 'Партнер',
+    connected: false
+};
+
+const monster = {
+    x: 13.5,
+    y: 13.5,
+    angle: 0,
+    speed: 0.025,
+    state: 'patrol', // 'patrol' або 'chase'
+    targetX: 1.5,
+    targetY: 1.5,
+    aggressiveness: 1.0
+};
+
+// Предмети в бункері (Ключі та Батарейки)
+let items = [
+    { x: 1.5, y: 13.5, type: 'key', collected: false },
+    { x: 14.5, y: 1.5, type: 'key', collected: false },
+    { x: 7.5, y: 7.5, type: 'key', collected: false },
+    { x: 1.5, y: 7.5, type: 'key', collected: false },
+    { x: 13.5, y: 9.5, type: 'key', collected: false },
+    // Батарейки
+    { x: 5.5, y: 1.5, type: 'battery', collected: false },
+    { x: 9.5, y: 13.5, type: 'battery', collected: false }
+];
+
+const keys = {};
+window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    audio.init();
+    if (e.code === 'KeyF') toggleFlashlight();
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+function toggleFlashlight() {
+    if (player.battery > 0) {
+        player.flashlight = !player.flashlight;
+    }
+}
+
+// Захоплення миші для огляду в 3D
+const canvas = document.getElementById('raycaster');
+const ctx = canvas.getContext('2d');
+
+canvas.addEventListener('click', () => {
+    audio.init();
+    canvas.requestPointerLock();
+});
+
+document.addEventListener('mousemove', e => {
+    if (document.pointerLockElement === canvas && player.isAlive) {
+        player.angle += e.movementX * 0.003;
+    }
+});
+
+let peer = null;
+let conn = null;
+
+function initNetwork() {
+    const nameInput = document.getElementById('player-name').value;
+    if (nameInput) player.name = nameInput;
+
+    document.getElementById('btn-create').addEventListener('click', createRoom);
+    document.getElementById('btn-join-mode').addEventListener('click', () => {
+        document.getElementById('lobby-actions').style.display = 'none';
+        document.getElementById('join-section').style.display = 'block';
+    });
+    document.getElementById('btn-single').addEventListener('click', startSinglePlayer);
+    document.getElementById('btn-cancel-create').addEventListener('click', resetLobby);
+    document.getElementById('btn-cancel-join').addEventListener('click', resetLobby);
+    document.getElementById('btn-connect').addEventListener('click', joinRoom);
+}
+
+function resetLobby() {
+    showLobbyError("");
+    document.getElementById('lobby-actions').style.display = 'block';
+    document.getElementById('create-section').style.display = 'none';
+    document.getElementById('join-section').style.display = 'none';
+}
+
+function showLobbyError(msg) {
+    const errDiv = document.getElementById('lobby-error');
+    if (!errDiv) return;
+    if (msg) {
+        errDiv.innerText = msg;
+        errDiv.style.display = 'block';
+    } else {
+        errDiv.innerText = '';
+        errDiv.style.display = 'none';
+    }
+}
+
+function createRoom() {
+    showLobbyError("");
+    document.getElementById('lobby-actions').style.display = 'none';
+    document.getElementById('create-section').style.display = 'block';
+
+    const shortId = 'bunker-' + Math.floor(1000 + Math.random() * 9000);
+    
+    if (typeof Peer === 'undefined') {
+        showLobbyError("Модуль PeerJS не завантажено. Будь ласка, запустіть Одиночний Режим.");
+        return;
+    }
+
+    try {
+        peer = new Peer(shortId);
+
+        peer.on('open', id => {
+            document.getElementById('room-code-display').innerText = id;
+        });
+
+        peer.on('connection', connection => {
+            conn = connection;
+            setupNetworkHandlers();
+        });
+
+        peer.on('error', err => {
+            console.warn("PeerJS connection error:", err);
+            document.getElementById('room-code-display').innerText = "ОБМЕЖЕНО";
+            showLobbyError("WebSocket-з'єднання заблоковане правилами безпеки цього песочниця/iFrame. Будь ласка, грайте в Одиночному режимі або відкрийте HTML-файл безпосередньо у браузері.");
+        });
+    } catch (err) {
+        console.error("PeerJS initialization failed:", err);
+        document.getElementById('room-code-display').innerText = "ОБМЕЖЕНО";
+        showLobbyError("Мережевий режим (WebSocket) недоступний усередині цього фрейму. Скористайтеся Одиночним режимом.");
+    }
+}
+
+function joinRoom() {
+    showLobbyError("");
+    const code = document.getElementById('join-code-input').value.trim();
+    if (!code) return;
+
+    if (typeof Peer === 'undefined') {
+        showLobbyError("Модуль PeerJS не завантажено. Будь ласка, запустіть Одиночний Режим.");
+        return;
+    }
+
+    try {
+        peer = new Peer();
+        peer.on('open', () => {
+            conn = peer.connect(code);
+            setupNetworkHandlers();
+        });
+
+        peer.on('error', err => {
+            console.warn("PeerJS join error:", err);
+            showLobbyError("Не вдалося підключитися (WebSocket заблоковано в цьому середовищі). Скористайтеся Одиночним режимом.");
+        });
+    } catch (err) {
+        console.error("PeerJS join error:", err);
+        showLobbyError("Мережевий режим заблоковано в іфреймі перегляду. Скористайтеся Одиночним режимом.");
+    }
+}
+
+function setupNetworkHandlers() {
+    partner.connected = true;
+    document.getElementById('partner-status').innerHTML = `ПАРТНЕР: <span style="color:#22c55e;">ОНЛАЙН</span>`;
+
+    conn.on('open', () => {
+        document.getElementById('lobby-screen').style.display = 'none';
+        document.getElementById('hud').style.display = 'flex';
+        startGameLoop();
+    });
+
+    conn.on('data', data => {
+        if (data.type === 'sync') {
+            partner.x = data.x;
+            partner.y = data.y;
+            partner.angle = data.angle;
+            partner.flashlight = data.flashlight;
+            partner.isAlive = data.isAlive;
+            partner.name = data.name;
+        } else if (data.type === 'item_collected') {
+            items[data.index].collected = true;
+            showMessage(`Напарник підняв ${items[data.index].type === 'key' ? 'Ключ-карту' : 'Батарейку'}!`);
+        } else if (data.type === 'game_over') {
+            showEndGame(false, "Ваш напарник загинув. Бункер став вашою могилою...");
+        }
+    });
+}
+
+function sendNetworkSync() {
+    if (conn && conn.open) {
+        conn.send({
+            type: 'sync',
+            x: player.x,
+            y: player.y,
+            angle: player.angle,
+            flashlight: player.flashlight,
+            isAlive: player.isAlive,
+            name: player.name
+        });
+    }
+}
+
+function startSinglePlayer() {
+    document.getElementById('lobby-screen').style.display = 'none';
+    document.getElementById('hud').style.display = 'flex';
+    document.getElementById('partner-status').innerHTML = `ПАРТНЕР: <span style="color:#6b7280;">НЕМАЄ</span>`;
+    startGameLoop();
+}
+
+let lastHeartbeat = 0;
+
+function updateMonster() {
+    if (!player.isAlive) return;
+
+    // Відстань до гравця
+    const dx = player.x - monster.x;
+    const dy = player.y - monster.y;
+    const distToPlayer = Math.hypot(dx, dy);
+
+    // Звук серцебиття при наближенні монстра
+    if (distToPlayer < 5.0) {
+        document.getElementById('monster-warning').innerText = 'ПОПЕРЕДЖЕННЯ: ЩОСЬ ПОРУЧ!';
+        document.getElementById('monster-warning').style.color = '#ef4444';
+        
+        if (Date.now() - lastHeartbeat > distToPlayer * 200 + 150) {
+            audio.playHeartbeat();
+            lastHeartbeat = Date.now();
+        }
+    } else {
+        document.getElementById('monster-warning').innerText = 'ТИША В БУНКЕРІ';
+        document.getElementById('monster-warning').style.color = '#666';
+    }
+
+    // Перевірка помітності (якщо світить ліхтарик або гравець близько)
+    const canSeePlayer = (distToPlayer < 6.0 && player.flashlight) || distToPlayer < 2.5;
+
+    if (canSeePlayer) {
+        monster.state = 'chase';
+        monster.targetX = player.x;
+        monster.targetY = player.y;
+    }
+
+    // Рух монстра
+    const targetDx = monster.targetX - monster.x;
+    const targetDy = monster.targetY - monster.y;
+    const targetDist = Math.hypot(targetDx, targetDy);
+
+    if (targetDist > 0.2) {
+        const moveX = (targetDx / targetDist) * monster.speed;
+        const moveY = (targetDy / targetDist) * monster.speed;
+
+        // Колізія монстра зі стінами
+        if (MAP[Math.floor(monster.y)][Math.floor(monster.x + moveX * 2)] === 0) monster.x += moveX;
+        if (MAP[Math.floor(monster.y + moveY * 2)][Math.floor(monster.x)] === 0) monster.y += moveY;
+    } else {
+        // Якщо дістався точки - випадкова патрульна точка
+        monster.state = 'patrol';
+        monster.targetX = Math.floor(Math.random() * (MAP_SIZE - 2)) + 1.5;
+        monster.targetY = Math.floor(Math.random() * (MAP_SIZE - 2)) + 1.5;
+    }
+
+    // Атака монстра
+    if (distToPlayer < 0.6) {
+        audio.playScream();
+        triggerGlitch();
+        player.isAlive = false;
+        if (conn && conn.open) {
+            conn.send({ type: 'game_over' });
+        }
+        setTimeout(() => {
+            showEndGame(false, "Тінь наздогнала вас у темряві...");
+        }, 600);
+    }
+}
+
+function triggerGlitch() {
+    const glitch = document.getElementById('glitch');
+    glitch.style.background = 'rgba(220, 38, 38, 0.6)';
+    setTimeout(() => glitch.style.background = 'rgba(0,0,0,0)', 200);
+}
+
+let stepTimer = 0;
+
+function updatePlayer() {
+    if (!player.isAlive) return;
+
+    let moveSpeed = 0.035;
+
+    // Спринт на Shift
+    if (keys['ShiftLeft'] && player.stamina > 5) {
+        moveSpeed = 0.06;
+        player.stamina = Math.max(0, player.stamina - 0.6);
+    } else {
+        player.stamina = Math.min(100, player.stamina + 0.2);
+    }
+    document.getElementById('stamina-fill').style.width = player.stamina + '%';
+
+    // Розрядка батарейки ліхтарика
+    if (player.flashlight) {
+        player.battery = Math.max(0, player.battery - 0.03);
+        if (player.battery === 0) player.flashlight = false;
+    }
+    document.getElementById('battery-fill').style.width = player.battery + '%';
+
+    // Вектори руху
+    let dx = 0;
+    let dy = 0;
+
+    if (keys['KeyW'] || keys['ArrowUp']) {
+        dx += Math.cos(player.angle) * moveSpeed;
+        dy += Math.sin(player.angle) * moveSpeed;
+    }
+    if (keys['KeyS'] || keys['ArrowDown']) {
+        dx -= Math.cos(player.angle) * moveSpeed;
+        dy -= Math.sin(player.angle) * moveSpeed;
+    }
+    if (keys['KeyA']) {
+        dx += Math.sin(player.angle) * moveSpeed;
+        dy -= Math.cos(player.angle) * moveSpeed;
+    }
+    if (keys['KeyD']) {
+        dx -= Math.sin(player.angle) * moveSpeed;
+        dy += Math.cos(player.angle) * moveSpeed;
+    }
+
+    // Поворот стрілками клавіатури
+    if (keys['ArrowLeft']) player.angle -= 0.04;
+    if (keys['ArrowRight']) player.angle += 0.04;
+
+    // Перевірка колізій із простим слайдингом
+    const newX = player.x + dx;
+    const newY = player.y + dy;
+
+    if (MAP[Math.floor(player.y)][Math.floor(newX)] !== 1) player.x = newX;
+    if (MAP[Math.floor(newY)][Math.floor(player.x)] !== 1) player.y = newY;
+
+    // Звуки кроків
+    if (dx !== 0 || dy !== 0) {
+        stepTimer++;
+        if (stepTimer % 18 === 0) audio.playFootstep();
+    }
+
+    // Підбір предметів на 'E' або підході
+    items.forEach((item, idx) => {
+        if (!item.collected) {
+            const dist = Math.hypot(player.x - item.x, player.y - item.y);
+            if (dist < 0.5 || (keys['KeyE'] && dist < 0.8)) {
+                item.collected = true;
+                audio.playPickup();
+
+                if (item.type === 'key') {
+                    player.keysCollected++;
+                    document.getElementById('keys-count').innerText = player.keysCollected;
+                    showMessage('Знайдено Ключ-карту!');
+                } else if (item.type === 'battery') {
+                    player.battery = Math.min(100, player.battery + 50);
+                    showMessage('Ліхтарик підзаряджено!');
+                }
+
+                if (conn && conn.open) {
+                    conn.send({ type: 'item_collected', index: idx });
+                }
+            }
+        }
+    });
+
+    // Перевірка втечі через гермодвері (значення 2 в масиві карти)
+    if (MAP[Math.floor(player.y)][Math.floor(player.x)] === 2) {
+        if (player.keysCollected >= 5) {
+            showEndGame(true, "Ви відкрили гермодвері та вирвалися з підземної пастки!");
+        } else {
+            showMessage(`Потрібно зібрати ще ${5 - player.keysCollected} ключів!`);
+        }
+    }
+
+    sendNetworkSync();
+}
+
+function showMessage(txt) {
+    const log = document.getElementById('message-log');
+    log.innerText = txt;
+    log.style.opacity = 1;
+    setTimeout(() => log.style.opacity = 0, 2500);
+}
+
+function render3D() {
+    const width = canvas.width;
+    const height = canvas.height;
+    const fov = Math.PI / 3; // 60 градусів огляд
+    const halfFov = fov / 2;
+    const numRays = width;
+    const deltaAngle = fov / numRays;
+
+    // Очищення екрана (Темна підлога і стеля)
+    ctx.fillStyle = '#050505';
+    ctx.fillRect(0, 0, width, height / 2); // Стеля
+    ctx.fillStyle = '#0a0a0c';
+    ctx.fillRect(0, height / 2, width, height / 2); // Підлога
+
+    const zBuffer = new Float32Array(numRays);
+
+    // Алгоритм пускання променів (DDA Raycasting)
+    for (let i = 0; i < numRays; i++) {
+        const rayAngle = player.angle - halfFov + i * deltaAngle;
+        let distance = 0;
+        let hitWall = false;
+        let hitType = 1;
+
+        const cos = Math.cos(rayAngle);
+        const sin = Math.sin(rayAngle);
+
+        let checkX = player.x;
+        let checkY = player.y;
+
+        while (!hitWall && distance < 12) {
+            distance += 0.04;
+            checkX = player.x + cos * distance;
+            checkY = player.y + sin * distance;
+
+            const mapX = Math.floor(checkX);
+            const mapY = Math.floor(checkY);
+
+            if (mapX >= 0 && mapX < MAP_SIZE && mapY >= 0 && mapY < MAP_SIZE) {
+                if (MAP[mapY][mapX] > 0) {
+                    hitWall = true;
+                    hitType = MAP[mapY][mapX];
+                }
+            } else {
+                hitWall = true;
+            }
+        }
+
+        // Усунення ефекту "Fisheye"
+        const correctedDist = distance * Math.cos(rayAngle - player.angle);
+        zBuffer[i] = correctedDist;
+
+        // Висота стіни
+        const wallHeight = Math.min(height, (height / correctedDist));
+
+        // Освітлення залежно від ліхтарика та відстані
+        let brightness = Math.max(0, 1 - (correctedDist / (player.flashlight ? 7.5 : 2.0)));
+        if (!player.flashlight) brightness *= 0.2; // Тінь без ліхтарика
+
+        // Малювання стіни (Текстура або колір Гермодверей)
+        const wallTop = (height - wallHeight) / 2;
+        
+        if (hitType === 2) {
+            // Гермодвері (Вихід)
+            ctx.fillStyle = `rgb(${200 * brightness}, ${30 * brightness}, ${30 * brightness})`;
+            ctx.fillRect(i, wallTop, 1, wallHeight);
+        } else {
+            // Звичайна стіна бункера
+            const shade = Math.floor(120 * brightness);
+            ctx.fillStyle = `rgb(${shade}, ${shade}, ${shade * 1.1})`;
+            ctx.fillRect(i, wallTop, 1, wallHeight);
+        }
+    }
+
+    // Рендеринг Спрайтів (Предмети, Напарник, Монстр)
+    renderSprites(zBuffer, fov);
+}
+
+function renderSprites(zBuffer, fov) {
+    const sprites = [];
+
+    // Предмети
+    items.forEach(item => {
+        if (!item.collected) {
+            sprites.push({
+                x: item.x,
+                y: item.y,
+                color: item.type === 'key' ? '#ef4444' : '#eab308',
+                size: 0.25,
+                label: item.type === 'key' ? 'КЛЮЧ' : 'БАТАРЕЯ'
+            });
+        }
+    });
+
+    // Напарник
+    if (partner.connected && partner.isAlive) {
+        sprites.push({
+            x: partner.x,
+            y: partner.y,
+            color: '#3b82f6',
+            size: 0.5,
+            label: partner.name
+        });
+    }
+
+    // Монстр "Тінь"
+    sprites.push({
+        x: monster.x,
+        y: monster.y,
+        color: '#dc2626',
+        size: 0.7,
+        isMonster: true,
+        label: 'ТІНЬ'
+    });
+
+    // Сортування спрайтів від найвіддаленішого
+    sprites.sort((a, b) => {
+        const distA = Math.hypot(player.x - a.x, player.y - a.y);
+        const distB = Math.hypot(player.x - b.x, player.y - b.y);
+        return distB - distA;
+    });
+
+    sprites.forEach(sprite => {
+        const dx = sprite.x - player.x;
+        const dy = sprite.y - player.y;
+        let spriteAngle = Math.atan2(dy, dx) - player.angle;
+
+        while (spriteAngle < -Math.PI) spriteAngle += Math.PI * 2;
+        while (spriteAngle > Math.PI) spriteAngle -= Math.PI * 2;
+
+        const dist = Math.hypot(dx, dy);
+
+        if (dist > 0.2 && dist < 10) {
+            const screenX = (canvas.width / 2) + (spriteAngle / fov) * canvas.width;
+            const spriteSize = Math.min(canvas.height, (canvas.height / dist) * sprite.size);
+            const topY = (canvas.height - spriteSize) / 2;
+
+            const rayIdx = Math.floor(screenX);
+
+            if (rayIdx >= 0 && rayIdx < canvas.width && zBuffer[rayIdx] > dist) {
+                // Малювання спрайта
+                ctx.fillStyle = sprite.color;
+
+                if (sprite.isMonster) {
+                    // Страшний силует монстра з червоними очима
+                    ctx.fillStyle = '#050505';
+                    ctx.beginPath();
+                    ctx.arc(screenX, topY + spriteSize / 2, spriteSize / 2, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Червоні сяючі очі
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(screenX - spriteSize * 0.15, topY + spriteSize * 0.3, spriteSize * 0.1, spriteSize * 0.1);
+                    ctx.fillRect(screenX + spriteSize * 0.05, topY + spriteSize * 0.3, spriteSize * 0.1, spriteSize * 0.1);
+                } else {
+                    // Звичайний квадратний спрайт для предметів або партнера
+                    ctx.fillRect(screenX - spriteSize / 2, topY, spriteSize, spriteSize);
+                    
+                    // Текст над спрайтом
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '10px Courier New';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(sprite.label, screenX, topY - 5);
+                }
+            }
+        }
+    });
+}
+
+function resizeCanvas() {
+    canvas.width = Math.floor(window.innerWidth / 2.5);  // Низький ретро-дозвіл для хорор атмосфери
+    canvas.height = Math.floor(window.innerHeight / 2.5);
+}
+
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function startGameLoop() {
+    function loop() {
+        if (player.isAlive) {
+            updatePlayer();
+            updateMonster();
+            render3D();
+            requestAnimationFrame(loop);
+        }
+    }
+    loop();
+}
+
+function showEndGame(victory, text) {
+    document.getElementById('end-screen').style.display = 'flex';
+    document.getElementById('end-title').innerText = victory ? "ВИ ВТЕКЛИ!" : "ГРА ЗАКІНЧЕНА";
+    document.getElementById('end-title').style.color = victory ? "#22c55e" : "#dc2626";
+    document.getElementById('end-message').innerText = text;
+}
+
+// Початкова ініціалізація
+initNetwork();
+</script>
+</body>
+</html>
