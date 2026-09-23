@@ -2,536 +2,1366 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Лабіринт Тіней: Проклятий Бункер</title>
-    <!-- Firebase CDN -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
-        body, html { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Courier New', monospace; color: #fff; }
-        
-        #game-container { position: relative; width: 100vw; height: 100vh; }
-        canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
-        
-        /* UI Оверлей */
-        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-        
-        .hud-panel {
-            position: absolute; top: 20px; left: 20px;
-            background: rgba(10, 10, 10, 0.85); border: 2px solid #333;
-            padding: 15px; border-radius: 8px; font-size: 14px;
-            box-shadow: 0 0 15px rgba(255, 0, 0, 0.2);
-            display: flex; flex-direction: column; gap: 8px; min-width: 220px;
-        }
 
-        .bar-container { width: 100%; height: 12px; background: #222; border: 1px solid #444; border-radius: 4px; overflow: hidden; }
-        .bar-fill { height: 100%; transition: width 0.2s; }
-        .hp-fill { background: #ef4444; }
-        .battery-fill { background: #eab308; }
-        .o2-fill { background: #06b6d4; }
-
-        #keys-count { font-size: 18px; color: #f87171; font-weight: bold; text-shadow: 0 0 5px #ef4444; }
-        
-        /* Діалоги / Записки */
-        #note-modal {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            width: 80%; max-width: 500px; background: #111; border: 2px solid #888;
-            padding: 25px; border-radius: 10px; color: #ddd; font-size: 15px; line-height: 1.6;
-            box-shadow: 0 0 30px rgba(255, 255, 255, 0.1); pointer-events: auto; display: none;
-        }
-        #note-modal h3 { color: #f87171; margin-bottom: 10px; font-size: 18px; text-transform: uppercase; }
-        #note-modal .close-btn { margin-top: 15px; background: #333; color: #fff; border: 1px solid #555; padding: 8px 16px; cursor: pointer; float: right; }
-
-        /* Екрани */
-        .screen {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: #050505; display: flex; flex-direction: column;
-            justify-content: center; align-items: center; z-index: 100; pointer-events: auto;
-        }
-        
-        h1 { font-size: 42px; color: #dc2626; text-shadow: 0 0 20px #7f1d1d; letter-spacing: 4px; margin-bottom: 10px; text-align: center; }
-        p.subtitle { color: #666; font-size: 14px; margin-bottom: 30px; text-transform: uppercase; letter-spacing: 2px; }
-
-        .form-box { background: rgba(20, 20, 20, 0.9); border: 1px solid #333; padding: 30px; border-radius: 8px; width: 320px; display: flex; flex-direction: column; gap: 15px; }
-        label { font-size: 12px; color: #888; letter-spacing: 1px; }
-        input { background: #111; border: 1px solid #444; color: #fff; padding: 10px; font-family: inherit; font-size: 16px; border-radius: 4px; outline: none; }
-        input:focus { border-color: #dc2626; }
-        
-        .btn-group { display: flex; gap: 10px; }
-        button {
-            flex: 1; padding: 12px; background: #222; color: #fff; border: 1px solid #444;
-            font-family: inherit; font-size: 14px; cursor: pointer; transition: all 0.2s; font-weight: bold;
-        }
-        button:hover { background: #dc2626; border-color: #ef4444; color: #000; box-shadow: 0 0 10px #dc2626; }
-
-        /* Приціл та спецефекти */
-        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: rgba(255,255,255,0.3); font-size: 18px; pointer-events: none; }
-        #damage-flash { position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(255,0,0,0.3); pointer-events:none; opacity:0; transition: opacity 0.2s; }
-        #static-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background: url('data:image/svg+xml;utf8,<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><filter id="noiseFilter"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23noiseFilter)" opacity="0.05"/></svg>'); pointer-events:none; }
-    </style>
-</head>
-<body>
-
-<div id="game-container">
-    <canvas id="canvas"></canvas>
-
-    <div id="ui-layer">
-        <div id="crosshair">+</div>
-        <div id="damage-flash"></div>
-        <div id="static-overlay"></div>
-
-        <div class="hud-panel" id="hud" style="display: none;">
-            <div>ЗДОРОВ'Я</div>
-            <div class="bar-container"><div id="hp-bar" class="bar-fill hp-fill" style="width: 100%;"></div></div>
-            
-            <div>БАТАРЕЯ ЛІХТАРИКА</div>
-            <div class="bar-container"><div id="battery-bar" class="bar-fill battery-fill" style="width: 100%;"></div></div>
-
-            <div>КИСЕНЬ (O₂)</div>
-            <div class="bar-container"><div id="o2-bar" class="bar-fill o2-fill" style="width: 100%;"></div></div>
-
-            <div style="margin-top: 10px;">КЛЮЧІ: <span id="keys-count">0 / 5</span></div>
-            <div style="font-size: 11px; color: #888;" id="room-display">КІМНАТА: -</div>
-        </div>
-
-        <div id="note-modal">
-            <h3 id="note-title">Записка</h3>
-            <p id="note-body">Текст записки...</p>
-            <button class="close-btn" onclick="closeNote()">ЗАКРИТИ (E)</button>
-        </div>
-    </div>
-
-    <!-- Головне меню -->
-    <div id="menu-screen" class="screen">
-        <h1>ЛАБІРИНТ ТІНЕЙ</h1>
-        <p class="subtitle">Проклятий Бункер: Химера-9</p>
-
-        <div class="form-box">
-            <div>
-                <label>ВАШЕ ІМ'Я:</label>
-                <input type="text" id="player-name" value="Шукач" maxlength="12">
-            </div>
-            <div>
-                <label>КОД КІМНАТИ (ДЛЯ ГРИ З ДРУГОМ):</label>
-                <input type="text" id="room-code" value="1337" maxlength="6">
-            </div>
-            <div class="btn-group">
-                <button onclick="startGame(false)">ОДИНОЧНО</button>
-                <button onclick="startGame(true)">ОНЛАЙН</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Екран Game Over -->
-    <div id="gameover-screen" class="screen" style="display: none;">
-        <h1 style="color: #ef4444;">ВИ ЗАГИНУЛИ</h1>
-        <p id="death-cause" class="subtitle">Тінь наздогнала вас у темряві...</p>
-        <button onclick="location.reload()" style="padding: 15px 30px;">СПРОБУВАТИ ЗНОВУ</button>
-    </div>
-</div>
-
-<script>
-// --- МЕРЕЖА FIREBASE ---
-const firebaseConfig = {
-    databaseURL: "https://territory-clicker-default-rtdb.firebaseio.com/"
-};
-
-if (!firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
-}
-const db = firebase.database();
-
-// --- СТАН ГРИ ---
-let isOnline = false;
-let roomRef = null;
-let playerId = 'p_' + Math.random().toString(36).substr(2, 9);
-let myName = "Шукач";
-
-const MAP_SIZE = 16;
-// 1: стіна, 0: пустка, 2: ключ, 3: батарейка, 4: кисень, 5: записка
-const MAP = [
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,1,0,2,0,0,0,0,0,3,0,0,1],
-    [1,0,1,0,1,0,1,1,1,0,1,1,1,1,0,1],
-    [1,5,1,0,0,0,0,0,1,0,0,0,0,1,0,1],
-    [1,0,1,1,1,1,0,1,1,1,1,0,1,1,0,1],
-    [1,0,0,0,3,1,0,0,0,5,1,0,0,0,2,1],
-    [1,1,1,0,1,1,1,1,0,1,1,1,0,1,1,1],
-    [1,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-    [1,0,1,1,1,0,1,1,1,1,0,1,1,1,0,1],
-    [1,0,1,4,1,0,1,2,0,1,0,1,4,1,0,1],
-    [1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1],
-    [1,1,1,0,1,1,1,0,0,1,1,1,0,1,1,1],
-    [1,5,0,0,0,0,0,0,2,0,0,0,0,0,5,1],
-    [1,0,1,1,1,0,1,1,1,0,1,1,1,1,0,1],
-    [1,3,0,0,1,0,0,4,0,0,1,0,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
-];
-
-const NOTES_TEXT = [
-    { title: "Щоденник #1", text: "День 12. Повітря стає важким. Генератори вийшли з ладу. Щось ходить у коридорах вентиляції..." },
-    { title: "Записка інженера", text: "Я заховав ключі-карти по всьому бункеру. Зберіть усі 5, щоб відкрити гермодвері на вихід!" },
-    { title: "Попередження", text: "Воно реагує на світло і шум! Якщо ліхтар розрядиться, ви опинитеся в пастці. Шукайте батарейки." },
-    { title: "Останній запис", text: "Кисню залишилося небагато. Балони O₂ на стелажах — єдиний шанс протягнути ще трішки..." }
-];
-
-let player = {
-    x: 1.5, y: 1.5, dirX: 1, dirY: 0, planeX: 0, planeY: 0.66,
-    hp: 100, battery: 100, o2: 100, keys: 0
-};
-
-let otherPlayers = {};
-let monster = { x: 8.5, y: 8.5, active: true };
-let currentNoteIndex = -1;
-
-// --- CANVAS & AUDIO ---
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-let audioCtx = null;
-
-function initAudio() {
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-}
-
-function playSound(freq, duration, type='sine') {
-    if (!audioCtx) return;
-    try {
-        let osc = audioCtx.createOscillator();
-        let gain = audioCtx.createGain();
-        osc.type = type;
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + duration);
-    } catch(e) {}
-}
-
-// --- УПРАВЛІННЯ ---
-const keysPressed = {};
-window.addEventListener('keydown', (e) => {
-    keysPressed[e.code] = true;
-    if (e.code === 'KeyE') interact();
-});
-window.addEventListener('keyup', (e) => keysPressed[e.code] = false);
-
-// --- СТАРТ ГРИ ---
-function startGame(onlineMode) {
-    initAudio();
-    myName = document.getElementById('player-name').value || "Шукач";
-    let roomCode = document.getElementById('room-code').value || "1337";
-    isOnline = onlineMode;
-
-    document.getElementById('menu-screen').style.display = 'none';
-    document.getElementById('hud').style.display = 'flex';
-    document.getElementById('room-display').innerText = `КІМНАТА: ${roomCode}`;
-
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
-
-    if (isOnline) {
-        roomRef = db.ref('rooms/' + roomCode);
-        
-        // Синхронізація позиції
-        setInterval(() => {
-            if (player.hp > 0) {
-                roomRef.child('players/' + playerId).set({
-                    name: myName,
-                    x: player.x,
-                    y: player.y
-                });
-            }
-        }, 100);
-
-        // Отримання даних про інших гравців
-        roomRef.child('players').on('value', (snapshot) => {
-            const data = snapshot.val() || {};
-            otherPlayers = data;
-        });
-
-        // Видалення при виході
-        roomRef.child('players/' + playerId).onDisconnect().remove();
-    }
-
-    requestAnimationFrame(gameLoop);
-    startTimers();
-}
-
-function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
-
-function startTimers() {
-    setInterval(() => {
-        if (player.hp <= 0) return;
-        
-        // Витрата батареї та кисню
-        if (player.battery > 0) player.battery -= 0.5;
-        if (player.o2 > 0) player.o2 -= 0.3;
-        else player.hp -= 2; // Удушшя
-
-        updateHUD();
-        if (player.hp <= 0) die("Кисень закінчився або ви втратили забагато сил...");
-    }, 1000);
-}
-
-function updateHUD() {
-    document.getElementById('hp-bar').style.width = player.hp + '%';
-    document.getElementById('battery-bar').style.width = player.battery + '%';
-    document.getElementById('o2-bar').style.width = player.o2 + '%';
-    document.getElementById('keys-count').innerText = `${player.keys} / 5`;
-}
-
-// --- ІНТЕРАКЦІЯ ---
-function interact() {
-    if (document.getElementById('note-modal').style.display === 'block') {
-        closeNote();
-        return;
-    }
-
-    let checkX = Math.floor(player.x + player.dirX * 0.8);
-    let checkY = Math.floor(player.y + player.dirY * 0.8);
-
-    if (checkX >= 0 && checkX < MAP_SIZE && checkY >= 0 && checkY < MAP_SIZE) {
-        let item = MAP[checkY][checkX];
-        if (item === 2) { // Ключ
-            MAP[checkY][checkX] = 0;
-            player.keys++;
-            playSound(600, 0.2);
-            if (player.keys >= 5) alert("Всі ключі зібрано! Шукайте вихід!");
-        } else if (item === 3) { // Батарейка
-            MAP[checkY][checkX] = 0;
-            player.battery = Math.min(100, player.battery + 50);
-            playSound(400, 0.1);
-        } else if (item === 4) { // Кисень
-            MAP[checkY][checkX] = 0;
-            player.o2 = Math.min(100, player.o2 + 40);
-            playSound(300, 0.3);
-        } else if (item === 5) { // Записка
-            currentNoteIndex = (currentNoteIndex + 1) % NOTES_TEXT.length;
-            showNote(NOTES_TEXT[currentNoteIndex]);
-        }
-    }
-    updateHUD();
-}
-
-function showNote(note) {
-    document.getElementById('note-title').innerText = note.title;
-    document.getElementById('note-body').innerText = note.text;
-    document.getElementById('note-modal').style.display = 'block';
-}
-
-function closeNote() {
-    document.getElementById('note-modal').style.display = 'none';
-}
-
-// --- ГОЛОВНИЙ ЦИКЛ ---
-let lastTime = performance.now();
-function gameLoop(now) {
-    let dt = (now - lastTime) / 1000;
-    lastTime = now;
-
-    if (player.hp > 0) {
-        updatePlayer(dt);
-        updateMonster(dt);
-        render();
-        requestAnimationFrame(gameLoop);
-    }
-}
-
-function updatePlayer(dt) {
-    let moveSpeed = 2.5 * dt;
-    let rotSpeed = 1.8 * dt;
-
-    if (keysPressed['KeyW'] || keysPressed['ArrowUp']) {
-        if (MAP[Math.floor(player.y)][Math.floor(player.x + player.dirX * moveSpeed)] === 0) player.x += player.dirX * moveSpeed;
-        if (MAP[Math.floor(player.y + player.dirY * moveSpeed)][Math.floor(player.x)] === 0) player.y += player.dirY * moveSpeed;
-    }
-    if (keysPressed['KeyS'] || keysPressed['ArrowDown']) {
-        if (MAP[Math.floor(player.y)][Math.floor(player.x - player.dirX * moveSpeed)] === 0) player.x -= player.dirX * moveSpeed;
-        if (MAP[Math.floor(player.y + player.dirY * moveSpeed)][Math.floor(player.x)] === 0) player.y -= player.dirY * moveSpeed;
-    }
-    if (keysPressed['KeyA'] || keysPressed['ArrowLeft']) {
-        let oldDirX = player.dirX;
-        player.dirX = player.dirX * Math.cos(rotSpeed) - player.dirY * Math.sin(rotSpeed);
-        player.dirY = oldDirX * Math.sin(rotSpeed) + player.dirY * Math.cos(rotSpeed);
-        let oldPlaneX = player.planeX;
-        player.planeX = player.planeX * Math.cos(rotSpeed) - player.planeY * Math.sin(rotSpeed);
-        player.planeY = oldPlaneX * Math.sin(rotSpeed) + player.planeY * Math.cos(rotSpeed);
-    }
-    if (keysPressed['KeyD'] || keysPressed['ArrowRight']) {
-        let oldDirX = player.dirX;
-        player.dirX = player.dirX * Math.cos(-rotSpeed) - player.dirY * Math.sin(-rotSpeed);
-        player.dirY = oldDirX * Math.sin(-rotSpeed) + player.dirY * Math.cos(-rotSpeed);
-        let oldPlaneX = player.planeX;
-        player.planeX = player.planeX * Math.cos(-rotSpeed) - player.planeY * Math.sin(-rotSpeed);
-        player.planeY = oldPlaneX * Math.sin(-rotSpeed) + player.planeY * Math.cos(-rotSpeed);
-    }
-}
-
-function updateMonster(dt) {
-    if (!monster.active) return;
-
-    let dx = player.x - monster.x;
-    let dy = player.y - monster.y;
-    let dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist < 8) { // Монстр іде до гравця
-        monster.x += (dx / dist) * 1.2 * dt;
-        monster.y += (dy / dist) * 1.2 * dt;
-
-        if (dist < 0.6) {
-            player.hp -= 30 * dt;
-            flashDamage();
-            playSound(100, 0.1, 'sawtooth');
-            updateHUD();
-            if (player.hp <= 0) die("Тінь роздерла вас у темряві...");
-        }
-    }
-}
-
-function flashDamage() {
-    let flash = document.getElementById('damage-flash');
-    flash.style.opacity = '1';
-    setTimeout(() => flash.style.opacity = '0', 200);
-}
-
-function die(reason) {
-    document.getElementById('death-cause').innerText = reason;
-    document.getElementById('gameover-screen').style.display = 'flex';
-}
-
-// --- РЕНДЕРИНГ (RAYCASTING 3D) ---
-function render() {
-    let w = canvas.width;
-    let h = canvas.height;
-
-    ctx.fillStyle = '#050505';
-    ctx.fillRect(0, 0, w, h / 2); // Стеля
-    ctx.fillStyle = '#111';
-    ctx.fillRect(0, h / 2, w, h / 2); // Підлога
-
-    let zBuffer = new Array(w);
-
-    // Промальовка стін
-    for (let x = 0; x < w; x += 2) {
-        let cameraX = 2 * x / w - 1;
-        let rayDirX = player.dirX + player.planeX * cameraX;
-        let rayDirY = player.dirY + player.planeY * cameraX;
-
-        let mapX = Math.floor(player.x);
-        let mapY = Math.floor(player.y);
-
-        let sideDistX, sideDistY;
-        let deltaDistX = Math.abs(1 / rayDirX);
-        let deltaDistY = Math.abs(1 / rayDirY);
-        let perpWallDist;
-
-        let stepX, stepY;
-        let hit = 0;
-        let side;
-
-        if (rayDirX < 0) { stepX = -1; sideDistX = (player.x - mapX) * deltaDistX; }
-        else { stepX = 1; sideDistX = (mapX + 1.0 - player.x) * deltaDistX; }
-        if (rayDirY < 0) { stepY = -1; sideDistY = (player.y - mapY) * deltaDistY; }
-        else { stepY = 1; sideDistY = (mapY + 1.0 - player.y) * deltaDistY; }
-
-        while (hit === 0) {
-            if (sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; side = 0; }
-            else { sideDistY += deltaDistY; mapY += stepY; side = 1; }
-            if (MAP[mapY][mapX] === 1) hit = 1;
-        }
-
-        if (side === 0) perpWallDist = (mapX - player.x + (1 - stepX) / 2) / rayDirX;
-        else perpWallDist = (mapY - player.y + (1 - stepY) / 2) / rayDirY;
-
-        zBuffer[x] = perpWallDist;
-        zBuffer[x+1] = perpWallDist;
-
-        let lineHeight = Math.floor(h / perpWallDist);
-        let drawStart = -lineHeight / 2 + h / 2;
-        let drawEnd = lineHeight / 2 + h / 2;
-
-        // Освітлення від ліхтарика
-        let light = Math.max(0, 1 - perpWallDist / (6 * (player.battery / 100)));
-        let color = side === 1 ? 120 * light : 180 * light;
-
-        ctx.fillStyle = `rgb(${color}, ${color * 0.2}, ${color * 0.2})`;
-        ctx.fillRect(x, drawStart, 2, drawEnd - drawStart);
-    }
-
-    // Рендеринг об'єктів (спрайти: ключі, монстр, інші гравці)
-    let sprites = [];
-
-    // Предмети
-    for (let r = 0; r < MAP_SIZE; r++) {
-        for (let c = 0; c < MAP_SIZE; c++) {
-            if (MAP[r][c] > 1) {
-                sprites.push({ x: c + 0.5, y: r + 0.5, type: MAP[r][c] });
-            }
-        }
-    }
-
-    // Монстр
-    sprites.push({ x: monster.x, y: monster.y, type: 'monster' });
-
-    // Інші гравці
-    if (isOnline) {
-        for (let id in otherPlayers) {
-            if (id !== playerId) {
-                sprites.push({ x: otherPlayers[id].x, y: otherPlayers[id].y, type: 'player', name: otherPlayers[id].name });
-            }
-        }
-    }
-
-    // Сортування спрайтів за відстанню
-    sprites.sort((a, b) => {
-        let distA = (player.x - a.x) ** 2 + (player.y - a.y) ** 2;
-        let distB = (player.x - b.x) ** 2 + (player.y - b.y) ** 2;
-        return distB - distA;
-    });
-
-    // Малювання спрайтів
-    for (let s of sprites) {
-        let spriteX = s.x - player.x;
-        let spriteY = s.y - player.y;
-
-        let invDet = 1.0 / (player.planeX * player.dirY - player.dirX * player.planeY);
-        let transformX = invDet * (player.dirY * spriteX - player.dirX * spriteY);
-        let transformY = invDet * (-player.planeY * spriteX + player.planeX * spriteY);
-
-        if (transformY > 0) {
-            let spriteScreenX = Math.floor((w / 2) * (1 + transformX / transformY));
-            let spriteHeight = Math.abs(Math.floor(h / transformY));
-            let drawStartY = Math.floor(-spriteHeight / 2 + h / 2);
-            let drawEndY = Math.floor(spriteHeight / 2 + h / 2);
-
-            let spriteWidth = Math.abs(Math.floor(h / transformY));
-            let drawStartX = Math.floor(-spriteWidth / 2 + spriteScreenX);
-            let drawEndX = Math.floor(spriteWidth / 2 + spriteScreenX);
-
-            if (spriteScreenX > 0 && spriteScreenX < w && transformY < zBuffer[spriteScreenX]) {
-                if (s.type === 'monster') {
-                    ctx.fillStyle = '#ef4444';
-                    ctx.beginPath();
-                    ctx.arc(spriteScreenX, h / 2, spriteHeight / 4, 0, Math.PI * 2);
-                    ctx.fill();
-                } else if (s.type === 'player') {
-                    ctx.fillStyle = '#3b82f6';
-                    ctx.fillRect(drawStartX, drawStartY, spriteWidth / 2, drawEndY - drawStartY);
-                } else { // Ітеми
-                    ctx.fillStyle = s.type === 2 ? '#f87171' : (s.type === 3 ? '#eab308' : '#06b6d4');
-                    ctx.fillRect(spriteScreenX - 5, h / 2, 10, 10);
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        horrorRed: '#dc2626',
+                        horrorDark: '#050508',
+                        horrorGray: '#1f2937',
+                        horrorAccent: '#ef4444'
+                    },
+                    fontFamily: {
+                        mono: ['Courier New', 'monospace', 'monospace']
+                    }
                 }
             }
         }
+    </script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: #030305;
+            color: #d1d5db;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        /* Scanline CRT overlay effect */
+        .crt::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+            z-index: 20;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        /* Horror Vignette */
+        .vignette {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background: radial-gradient(circle, transparent 40%, rgba(0, 0, 0, 0.85) 85%, rgba(0,0,0,0.98) 100%);
+            z-index: 15;
+        }
+
+        /* Red damage screen blood tint */
+        .damage-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background: radial-gradient(circle, transparent 20%, rgba(220, 38, 38, 0.4) 80%, rgba(153, 27, 27, 0.8) 100%);
+            mix-blend-mode: color-dodge;
+            z-index: 16;
+            opacity: 0;
+            transition: opacity 0.2s ease-in-out;
+        }
+
+        /* Custom glassmorphism styling */
+        .glass-panel {
+            background: rgba(10, 10, 15, 0.82);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(239, 68, 68, 0.25);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.7);
+        }
+
+        .hud-bar-fill {
+            transition: width 0.15s ease-out;
+        }
+
+        canvas {
+            image-rendering: pixelated;
+        }
+
+        /* Custom scrollbar for notes modal */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0a0a0f;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #ef4444;
+        }
+    </style>
+</head>
+<body class="crt relative w-full h-full bg-black text-gray-200">
+
+<div id="game-container" class="relative w-full h-full flex items-center justify-center overflow-hidden">
+    <!-- Main 3D Raycasting Canvas -->
+    <canvas id="raycaster" class="w-full h-full block cursor-crosshair"></canvas>
+
+    <!-- Visual Horror FX -->
+    <div class="vignette"></div>
+    <div id="damage-flash" class="damage-overlay"></div>
+
+    <!-- Center Crosshair and Context Hint -->
+    <div class="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-20">
+        <div class="w-2.5 h-2.5 bg-red-500/60 rounded-full border border-red-300 shadow-[0_0_8px_#ef4444] mb-3"></div>
+        <div id="action-hint" class="hidden px-3 py-1.5 bg-black/85 border border-red-500/50 text-red-400 font-bold text-xs tracking-wider rounded shadow-lg text-center animate-pulse">
+            Натисніть [E]
+        </div>
+    </div>
+
+    <!-- HUD Overlay During Gameplay -->
+    <div id="hud" class="hidden absolute inset-0 pointer-events-none z-20 p-4 md:p-6 flex flex-col justify-between">
+        <!-- Top HUD Row -->
+        <div class="flex justify-between items-start">
+            <!-- Player Stats Box -->
+            <div class="glass-panel p-3 md:p-4 rounded-lg w-52 md:w-64">
+                <!-- Health Bar -->
+                <div class="mb-2">
+                    <div class="flex justify-between text-xs font-bold text-red-400 mb-1">
+                        <span>ЗДОРОВ'Я</span>
+                        <span id="hp-val">100%</span>
+                    </div>
+                    <div class="w-full h-2.5 bg-gray-900 rounded border border-red-900/50 overflow-hidden">
+                        <div id="hp-bar" class="hud-bar-fill h-full bg-red-600 shadow-[0_0_8px_#dc2626]" style="width: 100%;"></div>
+                    </div>
+                </div>
+
+                <!-- Oxygen Bar -->
+                <div class="mb-2">
+                    <div class="flex justify-between text-xs font-bold text-cyan-400 mb-1">
+                        <span>КИСЕНЬ (O2)</span>
+                        <span id="o2-val">100%</span>
+                    </div>
+                    <div class="w-full h-2.5 bg-gray-900 rounded border border-cyan-900/50 overflow-hidden">
+                        <div id="o2-bar" class="hud-bar-fill h-full bg-cyan-500 shadow-[0_0_8px_#06b6d4]" style="width: 100%;"></div>
+                    </div>
+                </div>
+
+                <!-- Stamina Bar -->
+                <div class="mb-2">
+                    <div class="flex justify-between text-xs font-bold text-blue-400 mb-1">
+                        <span>ВИТРИВАЛІСТЬ (SHIFT)</span>
+                        <span id="stamina-val">100%</span>
+                    </div>
+                    <div class="w-full h-2 bg-gray-900 rounded border border-blue-900/50 overflow-hidden">
+                        <div id="stamina-bar" class="hud-bar-fill h-full bg-blue-500" style="width: 100%;"></div>
+                    </div>
+                </div>
+
+                <!-- Flashlight Battery Bar -->
+                <div>
+                    <div class="flex justify-between text-xs font-bold text-yellow-400 mb-1">
+                        <span>БАТАРЕЯ (F)</span>
+                        <span id="battery-val">100%</span>
+                    </div>
+                    <div class="w-full h-2 bg-gray-900 rounded border border-yellow-900/50 overflow-hidden">
+                        <div id="battery-bar" class="hud-bar-fill h-full bg-yellow-500" style="width: 100%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Right: Minimap and Partner Status -->
+            <div class="flex flex-col items-end gap-3">
+                <!-- Minimap Radar -->
+                <div class="glass-panel p-2 rounded-lg border border-red-900/40">
+                    <canvas id="minimap" width="120" height="120" class="rounded bg-black/90 block"></canvas>
+                </div>
+
+                <!-- Partner Info Box -->
+                <div class="glass-panel px-3 py-2 rounded text-xs">
+                    <div id="partner-status-text" class="font-bold text-gray-400">
+                        ПАРТНЕР: <span class="text-gray-500">ОФЛАЙН</span>
+                    </div>
+                    <div id="monster-warning" class="text-[10px] text-gray-500 mt-1 uppercase tracking-wider text-right">
+                        ТИША В БУНКЕРІ
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Notification Toast -->
+        <div id="message-log" class="text-center font-bold text-base md:text-lg text-red-400 tracking-wider text-shadow-[0_0_10px_#ef4444] opacity-0 transition-opacity duration-300">
+            Повідомлення гри...
+        </div>
+
+        <!-- Bottom HUD Row -->
+        <div class="flex justify-between items-end">
+            <!-- Keycards Counter & Mission Objectives -->
+            <div class="glass-panel p-3 rounded-lg flex flex-col gap-1">
+                <div class="text-xs text-gray-400">МІСІЯ: ВИМКНУТИ РЕАКТОР ТА ВТЕКТИ</div>
+                <div class="text-sm font-bold text-red-500 flex items-center gap-2">
+                    <span>КЛЮЧ-КАРТИ:</span>
+                    <span id="keys-count" class="text-lg text-red-400 shadow-[0_0_10px_#ef4444]">0</span> / 5
+                </div>
+                <div id="reactor-status" class="text-[11px] text-yellow-500 font-bold">
+                    РЕАКТОР: <span class="text-red-500 animate-pulse">АКТИВНИЙ</span>
+                </div>
+            </div>
+
+            <!-- Controls guide -->
+            <div class="hidden sm:block text-right text-[11px] text-gray-500 glass-panel p-2.5 rounded">
+                <div>[WASD / Стрілки] - Рух</div>
+                <div>[Клік миші] - Огляд</div>
+                <div>[F] - Ліхтарик | [SHIFT] - Біг</div>
+                <div>[E] - Взаємодія / Читання / Лікування</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lore Notes Modal -->
+    <div id="note-modal" class="hidden absolute inset-0 z-40 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="glass-panel border-red-700/60 p-6 md:p-8 rounded-lg max-w-lg w-full text-left relative flex flex-col shadow-[0_0_40px_rgba(220,38,38,0.2)]">
+            <h3 id="note-title" class="text-xl font-bold text-red-500 mb-2 border-b border-red-900/50 pb-2 uppercase tracking-widest">
+                Записник "Химера-9"
+            </h3>
+            <div id="note-body" class="text-sm md:text-base text-gray-300 leading-relaxed max-h-72 overflow-y-auto mb-6 my-2 whitespace-pre-line font-mono">
+                Текст документа...
+            </div>
+            <button id="btn-close-note" class="w-full py-2.5 bg-red-950 hover:bg-red-800 text-red-200 border border-red-600 rounded font-bold tracking-wider transition-colors">
+                [ЗАКРИТИ ТА ПРОДОВЖИТИ]
+            </button>
+        </div>
+    </div>
+
+    <!-- Lobby & Main Menu -->
+    <div id="lobby-screen" class="absolute inset-0 z-50 bg-neutral-950/95 flex items-center justify-center p-4">
+        <div class="glass-panel p-6 md:p-8 rounded-xl max-w-md w-full border border-red-900/60 shadow-[0_0_50px_rgba(185,28,28,0.25)] text-center">
+            <h1 class="text-2xl md:text-3xl font-black text-red-600 tracking-widest uppercase mb-1 drop-shadow-[0_0_12px_rgba(220,38,38,0.8)]">
+                Лабіринт Тіней
+            </h1>
+            <p class="text-xs text-red-400 uppercase tracking-widest font-bold mb-4">
+                Проклятий Бункер: Об'єкт "Химера-9"
+            </p>
+
+            <p class="text-xs md:text-sm text-gray-400 leading-relaxed mb-5 text-justify bg-black/50 p-3 rounded border border-gray-800">
+                1986 рік. Підземна секретна лабораторія перестала відповідати. Ви — група розвідників. Зберіть <b class="text-red-400">5 перепусток</b>, вимкніть випромінювач реактора через термінали підключення та вирвіться на поверхню. У темряві існує <b class="text-red-500">Істота 09</b>...
+            </p>
+
+            <!-- Nickname input -->
+            <div class="mb-4 text-left">
+                <label class="block text-xs font-bold text-gray-400 mb-1">ПОЗИВНИЙ СТАЛКЕРА:</label>
+                <input type="text" id="player-nickname" value="Сталкер-1" maxlength="12" class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-red-400 rounded focus:border-red-500 focus:outline-none font-bold text-sm">
+            </div>
+
+            <!-- Mode selectors -->
+            <div id="lobby-actions" class="space-y-2.5">
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-create-room" class="py-2.5 px-4 bg-red-900/80 hover:bg-red-700 text-white font-bold rounded text-xs uppercase tracking-wider transition-all border border-red-600">
+                        Створити Кімнату
+                    </button>
+                    <button id="btn-show-join" class="py-2.5 px-4 bg-neutral-800 hover:bg-neutral-700 text-gray-300 font-bold rounded text-xs uppercase tracking-wider transition-all border border-neutral-600">
+                        Приєднатися
+                    </button>
+                </div>
+                <button id="btn-singleplayer" class="w-full py-2.5 bg-neutral-900 hover:bg-neutral-800 text-gray-400 hover:text-white font-bold rounded text-xs uppercase tracking-wider transition-all border border-neutral-700">
+                    Одиночний Режим (Соло)
+                </button>
+            </div>
+
+            <!-- Create room code section -->
+            <div id="create-section" class="hidden mt-4 pt-4 border-t border-neutral-800">
+                <p class="text-xs text-gray-400 mb-1">КОД ВАШОЇ КІМНАТИ:</p>
+                <div id="room-code-display" class="bg-black py-2 px-4 border border-dashed border-red-500 text-red-400 font-bold text-lg tracking-widest my-2 select-all rounded">
+                    ------
+                </div>
+                <p class="text-[11px] text-gray-500 mb-3">Надішліть цей код напарнику для Co-op проходження.</p>
+                <button id="btn-start-host" class="w-full mb-2 py-2.5 bg-red-800 hover:bg-red-600 text-white font-bold rounded text-xs uppercase tracking-wider">
+                    Почати Занурення
+                </button>
+                <button id="btn-cancel-create" class="w-full py-2 bg-neutral-800 hover:bg-neutral-700 text-gray-400 font-bold rounded text-xs uppercase">
+                    Назад
+                </button>
+            </div>
+
+            <!-- Join room section -->
+            <div id="join-section" class="hidden mt-4 pt-4 border-t border-neutral-800 text-left">
+                <label class="block text-xs font-bold text-gray-400 mb-1">ВВЕДІТЬ КОД КІМНАТИ:</label>
+                <input type="text" id="join-code-input" placeholder="Наприклад: BUNK-1234" class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 text-red-400 rounded focus:border-red-500 focus:outline-none font-bold text-sm mb-3 uppercase">
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-join-room" class="py-2.5 bg-red-800 hover:bg-red-600 text-white font-bold rounded text-xs uppercase tracking-wider">
+                        Увійти
+                    </button>
+                    <button id="btn-cancel-join" class="py-2.5 bg-neutral-800 hover:bg-neutral-700 text-gray-400 font-bold rounded text-xs uppercase">
+                        Назад
+                    </button>
+                </div>
+            </div>
+
+            <!-- Network or Status Messages -->
+            <div id="lobby-error" class="hidden mt-3 p-2 bg-red-950/80 border border-red-600 rounded text-red-300 text-xs text-center"></div>
+        </div>
+    </div>
+
+    <!-- Game Over / Victory Modal -->
+    <div id="end-screen" class="hidden absolute inset-0 z-50 bg-black/95 flex items-center justify-center p-4">
+        <div class="glass-panel p-8 rounded-xl max-w-md w-full text-center border border-red-700">
+            <h2 id="end-title" class="text-3xl font-black text-red-600 uppercase tracking-widest mb-3">
+                ВИ ЗАГИНУЛИ
+            </h2>
+            <p id="end-message" class="text-sm text-gray-300 mb-6 leading-relaxed">
+                Тінь наздогнала вас у пітьмі коридорів...
+            </p>
+            <button onclick="location.reload();" class="w-full py-3 bg-red-900 hover:bg-red-700 text-white font-bold rounded uppercase tracking-wider border border-red-500 transition-colors">
+                Перезапустити Місію
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Firebase SDK JS -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getDatabase, ref, set, onValue, update, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+
+// WEB AUDIO API SOUND SYNTHESIS ENGINE
+class HorrorSoundEngine {
+    constructor() {
+        this.ctx = null;
+        this.isMuted = false;
     }
+
+    init() {
+        if (!this.ctx) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AudioCtx();
+        }
+        if (this.ctx.state === 'suspended') {
+            this.ctx.resume();
+        }
+    }
+
+    // Footstep sound synthesized via filtered low noise
+    playFootstep() {
+        if (!this.ctx || this.isMuted) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(60 + Math.random() * 25, this.ctx.currentTime);
+            gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.12);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.12);
+        } catch(e) {}
+    }
+
+    // Pickup key/item sound synth
+    playPickup() {
+        if (!this.ctx || this.isMuted) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(520, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1040, this.ctx.currentTime + 0.18);
+            gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.18);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.18);
+        } catch(e) {}
+    }
+
+    // Door/Terminal interaction
+    playTerminalUse() {
+        if (!this.ctx || this.isMuted) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+            osc.frequency.setValueAtTime(600, this.ctx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.25);
+        } catch(e) {}
+    }
+
+    // Heartbeat sound during danger
+    playHeartbeat() {
+        if (!this.ctx || this.isMuted) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(50, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(25, this.ctx.currentTime + 0.15);
+            gain.gain.setValueAtTime(0.35, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.15);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.15);
+        } catch(e) {}
+    }
+
+    // Monster jumpscare / screech sound
+    playMonsterScreech() {
+        if (!this.ctx || this.isMuted) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(120, this.ctx.currentTime);
+            osc.frequency.linearRampToValueAtTime(700, this.ctx.currentTime + 0.25);
+            osc.frequency.linearRampToValueAtTime(90, this.ctx.currentTime + 0.5);
+            
+            gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+            
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.5);
+        } catch(e) {}
+    }
+}
+
+const audio = new HorrorSoundEngine();
+
+// 16x16 BUNKER MAP DEFINITION
+// 1 = Wall, 0 = Empty, 2 = Reactor Blast Door Exit, 3 = Co-op Dual Terminal
+const MAP_SIZE = 16;
+const MAP = [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,1,0,0,0,0,0,1,0,0,0,0,1],
+    [1,0,1,0,1,0,1,1,1,0,1,0,1,1,0,1],
+    [1,0,1,0,0,0,0,0,1,0,0,0,1,0,0,1],
+    [1,0,1,1,1,1,1,0,1,1,1,0,1,0,1,1],
+    [1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,1],
+    [1,1,1,1,0,1,1,1,1,0,1,1,1,1,0,1],
+    [1,0,0,0,0,0,0,3,0,0,0,0,0,1,0,1],
+    [1,0,1,1,1,1,0,1,1,1,1,1,0,1,0,1],
+    [1,0,1,0,0,0,0,1,0,0,0,1,0,0,0,1],
+    [1,0,1,0,1,1,1,1,0,1,0,1,1,1,0,1],
+    [1,0,0,0,1,0,0,0,0,1,0,0,0,1,0,1],
+    [1,1,1,0,1,0,1,1,1,1,1,1,0,1,0,1],
+    [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+    [1,0,1,1,1,0,0,0,1,1,1,1,1,1,2,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+// LORE NOTES DISTRIBUTED AROUND THE BUNKER
+const GAME_NOTES = {
+    "2_1": { title: "Журнал піддослідного №09", body: "14 травня 1986 року. Проект 'Химера'. Суб'єкт перестав реагувати на сонячне світло. Реакції аномальні. Його тіло трансформується у темряві..." },
+    "13_1": { title: "Інструкція Безпеки", body: "УВАГА: Реактор аномалії блокує центральний вихід. Для деактивації знайдіть 5 червоних перепусток та активуйте подвійну консоль безпеки." },
+    "1_13": { title: "Запис Сталкера", body: "Істота 09 глуха до спокійного кроку, але реагує на світло ліхтаря та біг. Тримайтеся тіней, коли воно поруч!" }
+};
+
+// WORLD ITEMS
+let worldItems = [
+    { id: 0, x: 1.5, y: 13.5, type: 'keycard', collected: false },
+    { id: 1, x: 14.5, y: 1.5, type: 'keycard', collected: false },
+    { id: 2, x: 5.5, y: 5.5, type: 'keycard', collected: false },
+    { id: 3, x: 1.5, y: 7.5, type: 'keycard', collected: false },
+    { id: 4, x: 13.5, y: 9.5, type: 'keycard', collected: false },
+    { id: 5, x: 5.5, y: 1.5, type: 'battery', collected: false },
+    { id: 6, x: 9.5, y: 13.5, type: 'battery', collected: false },
+    { id: 7, x: 11.5, y: 3.5, type: 'medkit', collected: false },
+    { id: 8, x: 2.5, y: 1.5, type: 'note', noteKey: '2_1', collected: false },
+    { id: 9, x: 13.5, y: 1.5, type: 'note', noteKey: '13_1', collected: false },
+    { id: 10, x: 1.5, y: 13.5, type: 'note', noteKey: '1_13', collected: false }
+];
+
+// PLAYER & GAME STATE
+const player = {
+    id: 'p_' + Math.floor(Math.random() * 100000),
+    nickname: 'Сталкер',
+    x: 1.5,
+    y: 1.5,
+    angle: 0,
+    hp: 100,
+    oxygen: 100,
+    stamina: 100,
+    battery: 100,
+    flashlight: true,
+    keysCollected: 0,
+    isAlive: true,
+    isDowned: false,
+    interactingTerminal: false
+};
+
+const partner = {
+    id: null,
+    nickname: 'Партнер',
+    x: -1,
+    y: -1,
+    angle: 0,
+    hp: 100,
+    flashlight: false,
+    isAlive: false,
+    isDowned: false,
+    interactingTerminal: false,
+    connected: false
+};
+
+const monster = {
+    x: 13.5,
+    y: 13.5,
+    angle: 0,
+    speed: 0.022,
+    state: 'patrol', // 'patrol' or 'chase'
+    targetX: 1.5,
+    targetY: 1.5
+};
+
+let reactorDeactivated = false;
+let coopTerminalActivatedCount = 0;
+let isSingleplayer = true;
+let currentRoomCode = null;
+
+// FIREBASE DATABASE INITIALIZATION
+let db = null;
+let firebaseAuth = null;
+
+function initFirebase() {
+    try {
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : {
+                apiKey: "demo",
+                authDomain: "demo.firebaseapp.com",
+                databaseURL: "https://demo.firebaseio.com",
+                projectId: "demo",
+                storageBucket: "demo.appspot.com",
+                messagingSenderId: "123456789",
+                appId: "1:123456789:web:demo"
+              };
+
+        const app = initializeApp(firebaseConfig);
+        db = getDatabase(app);
+        firebaseAuth = getAuth(app);
+
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+            signInWithCustomToken(firebaseAuth, __initial_auth_token).catch(() => signInAnonymously(firebaseAuth));
+        } else {
+            signInAnonymously(firebaseAuth);
+        }
+    } catch (e) {
+        console.warn("Firebase Init fallback to offline mode", e);
+    }
+}
+initFirebase();
+
+// CONTROLS & POINTER LOCK
+const keys = {};
+window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    audio.init();
+    if (e.code === 'KeyF') toggleFlashlight();
+    if (e.code === 'KeyE') handleInteraction();
+});
+window.addEventListener('keyup', e => {
+    keys[e.code] = false;
+    if (e.code === 'KeyE') player.interactingTerminal = false;
+});
+
+function toggleFlashlight() {
+    if (player.battery > 0 && player.isAlive && !player.isDowned) {
+        player.flashlight = !player.flashlight;
+    }
+}
+
+const canvas = document.getElementById('raycaster');
+const ctx = canvas.getContext('2d');
+
+canvas.addEventListener('click', () => {
+    audio.init();
+    if (player.isAlive) {
+        canvas.requestPointerLock();
+    }
+});
+
+document.addEventListener('mousemove', e => {
+    if (document.pointerLockElement === canvas && player.isAlive && !player.isDowned) {
+        player.angle += e.movementX * 0.0032;
+    }
+});
+
+// MULTIPLAYER SYNC PROCEDURES
+function setupMultiplayerSync(roomCode) {
+    if (!db) return;
+    currentRoomCode = roomCode;
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'bunker-horror';
+    const roomRef = ref(db, `artifacts/${appId}/public/data/rooms/${roomCode}`);
+    const playerRef = ref(db, `artifacts/${appId}/public/data/rooms/${roomCode}/players/${player.id}`);
+
+    // Clean up player on disconnect
+    onDisconnect(playerRef).remove();
+
+    // Sync player state to DB
+    setInterval(() => {
+        if (!player.isAlive) return;
+        set(playerRef, {
+            id: player.id,
+            nickname: player.nickname,
+            x: player.x,
+            y: player.y,
+            angle: player.angle,
+            hp: player.hp,
+            flashlight: player.flashlight,
+            isAlive: player.isAlive,
+            isDowned: player.isDowned,
+            interactingTerminal: player.interactingTerminal,
+            lastSeen: Date.now()
+        });
+    }, 100);
+
+    // Listen for partner state changes
+    onValue(ref(db, `artifacts/${appId}/public/data/rooms/${roomCode}/players`), (snapshot) => {
+        const playersData = snapshot.val();
+        if (playersData) {
+            Object.keys(playersData).forEach(pId => {
+                if (pId !== player.id) {
+                    const p = playersData[pId];
+                    partner.id = p.id;
+                    partner.nickname = p.nickname || 'Партнер';
+                    partner.x = p.x;
+                    partner.y = p.y;
+                    partner.angle = p.angle;
+                    partner.hp = p.hp;
+                    partner.flashlight = p.flashlight;
+                    partner.isAlive = p.isAlive;
+                    partner.isDowned = p.isDowned;
+                    partner.interactingTerminal = p.interactingTerminal;
+                    partner.connected = true;
+                    updatePartnerHUD();
+                }
+            });
+        }
+    });
+
+    // Sync collected items across network
+    onValue(ref(db, `artifacts/${appId}/public/data/rooms/${roomCode}/items`), (snapshot) => {
+        const itemsData = snapshot.val();
+        if (itemsData) {
+            itemsData.forEach((collected, index) => {
+                if (collected && worldItems[index]) {
+                    worldItems[index].collected = true;
+                }
+            });
+        }
+    });
+
+    // Sync reactor status
+    onValue(ref(db, `artifacts/${appId}/public/data/rooms/${roomCode}/reactor`), (snapshot) => {
+        if (snapshot.val() === true) {
+            reactorDeactivated = true;
+            updateReactorHUD();
+        }
+    });
+}
+
+function updatePartnerHUD() {
+    const el = document.getElementById('partner-status-text');
+    if (!partner.connected) {
+        el.innerHTML = `ПАРТНЕР: <span class="text-gray-500">ОФЛАЙН</span>`;
+    } else if (partner.isDowned) {
+        el.innerHTML = `ПАРТНЕР [${partner.nickname}]: <span class="text-red-500 animate-pulse">ПОТРЕБУЄ ДОПОМОГИ [E]!</span>`;
+    } else {
+        el.innerHTML = `ПАРТНЕР [${partner.nickname}]: <span class="text-green-400">ЗДОРОВ (${partner.hp}%)</span>`;
+    }
+}
+
+function updateReactorHUD() {
+    const el = document.getElementById('reactor-status');
+    if (reactorDeactivated) {
+        el.innerHTML = `РЕАКТОР: <span class="text-green-400">ВИМКНЕНИЙ (ВИХІД ВІДКРИТО!)</span>`;
+    }
+}
+
+// LOBBY INTERACTION HANDLERS
+document.getElementById('btn-create-room').addEventListener('click', () => {
+    document.getElementById('lobby-actions').classList.add('hidden');
+    document.getElementById('create-section').classList.remove('hidden');
+    const code = 'BUNK-' + Math.floor(1000 + Math.random() * 9000);
+    document.getElementById('room-code-display').innerText = code;
+});
+
+document.getElementById('btn-cancel-create').addEventListener('click', () => {
+    document.getElementById('lobby-actions').classList.remove('hidden');
+    document.getElementById('create-section').classList.add('hidden');
+});
+
+document.getElementById('btn-show-join').addEventListener('click', () => {
+    document.getElementById('lobby-actions').classList.add('hidden');
+    document.getElementById('join-section').classList.remove('hidden');
+});
+
+document.getElementById('btn-cancel-join').addEventListener('click', () => {
+    document.getElementById('lobby-actions').classList.remove('hidden');
+    document.getElementById('join-section').classList.add('hidden');
+});
+
+document.getElementById('btn-singleplayer').addEventListener('click', () => {
+    isSingleplayer = true;
+    player.nickname = document.getElementById('player-nickname').value || 'Сталкер';
+    startGame();
+});
+
+document.getElementById('btn-start-host').addEventListener('click', () => {
+    isSingleplayer = false;
+    player.nickname = document.getElementById('player-nickname').value || 'Сталкер';
+    const code = document.getElementById('room-code-display').innerText.trim();
+    setupMultiplayerSync(code);
+    startGame();
+});
+
+document.getElementById('btn-join-room').addEventListener('click', () => {
+    const code = document.getElementById('join-code-input').value.trim().toUpperCase();
+    if (!code) return;
+    isSingleplayer = false;
+    player.nickname = document.getElementById('player-nickname').value || 'Сталкер';
+    setupMultiplayerSync(code);
+    startGame();
+});
+
+function startGame() {
+    document.getElementById('lobby-screen').classList.add('hidden');
+    document.getElementById('hud').classList.remove('hidden');
+    startGameLoop();
+}
+
+// INTERACTION & CO-OP TERMINAL MECHANICS
+function handleInteraction() {
+    if (!player.isAlive || player.isDowned) return;
+
+    // 1. Revive partner if near
+    if (partner.connected && partner.isDowned) {
+        const distToPartner = Math.hypot(player.x - partner.x, player.y - partner.y);
+        if (distToPartner < 1.2) {
+            audio.playPickup();
+            partner.isDowned = false;
+            partner.hp = 50;
+            showMessage(`Ви надали першу допомогу сталкеру ${partner.nickname}!`);
+            return;
+        }
+    }
+
+    // 2. Co-op Reactor Terminal at Map cell (7,7)
+    const playerCellX = Math.floor(player.x);
+    const playerCellY = Math.floor(player.y);
+    if (MAP[playerCellY] && MAP[playerCellY][playerCellX] === 3) {
+        player.interactingTerminal = true;
+        audio.playTerminalUse();
+
+        if (isSingleplayer) {
+            if (player.keysCollected >= 5) {
+                reactorDeactivated = true;
+                updateReactorHUD();
+                showMessage("Реактор аномалії вимкнено! Гермодвері відчинено!");
+            } else {
+                showMessage(`Необхідно зібрати всі 5 перепусток! (${player.keysCollected}/5)`);
+            }
+        } else {
+            // Multiplayer check if both players interact
+            if (partner.connected && partner.interactingTerminal) {
+                if (player.keysCollected + (partner.keysCollected || 0) >= 5) {
+                    reactorDeactivated = true;
+                    updateReactorHUD();
+                    if (db && currentRoomCode) {
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'bunker-horror';
+                        set(ref(db, `artifacts/${appId}/public/data/rooms/${currentRoomCode}/reactor`), true);
+                    }
+                    showMessage("СИНХРОНІЗАЦІЯ УСПІШНА! Реактор деактивовано!");
+                } else {
+                    showMessage("Потрібно щонайменше 5 перепусток на двох!");
+                }
+            } else {
+                showMessage("ПОТРІБЕН ДРУГ! Партнер також повинен утримувати [E] біля терміналу!");
+            }
+        }
+        return;
+    }
+
+    // 3. Pick up items or read notes nearby
+    worldItems.forEach((item, idx) => {
+        if (!item.collected) {
+            const dist = Math.hypot(player.x - item.x, player.y - item.y);
+            if (dist < 0.8) {
+                item.collected = true;
+                audio.playPickup();
+
+                // Sync item pickup online
+                if (!isSingleplayer && db && currentRoomCode) {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'bunker-horror';
+                    set(ref(db, `artifacts/${appId}/public/data/rooms/${currentRoomCode}/items/${idx}`), true);
+                }
+
+                if (item.type === 'keycard') {
+                    player.keysCollected++;
+                    document.getElementById('keys-count').innerText = player.keysCollected;
+                    showMessage("Знайдено Червону Ключ-карту!");
+                } else if (item.type === 'battery') {
+                    player.battery = Math.min(100, player.battery + 50);
+                    showMessage("Батарею ліхтарика відновлено!");
+                } else if (item.type === 'medkit') {
+                    player.hp = Math.min(100, player.hp + 40);
+                    showMessage("Аптечка використана (+40 HP)!");
+                } else if (item.type === 'note') {
+                    openNote(item.noteKey);
+                }
+            }
+        }
+    });
+}
+
+function openNote(noteKey) {
+    const data = GAME_NOTES[noteKey];
+    if (!data) return;
+    document.getElementById('note-title').innerText = data.title;
+    document.getElementById('note-body').innerText = data.body;
+    document.getElementById('note-modal').classList.remove('hidden');
+}
+
+document.getElementById('btn-close-note').addEventListener('click', () => {
+    document.getElementById('note-modal').classList.add('hidden');
+});
+
+function showMessage(txt) {
+    const log = document.getElementById('message-log');
+    log.innerText = txt;
+    log.style.opacity = '1';
+    setTimeout(() => { log.style.opacity = '0'; }, 3000);
+}
+
+// GAME LOGIC & MONSTER AI UPDATE
+let stepTimer = 0;
+let lastHeartbeatTime = 0;
+
+function updatePlayer() {
+    if (!player.isAlive) return;
+
+    // Downed state mechanics
+    if (player.isDowned) {
+        player.hp = Math.max(0, player.hp - 0.05);
+        if (player.hp <= 0) {
+            player.isAlive = false;
+            showEndGame(false, "Ви стекли кров'ю від отриманих ран...");
+        }
+        updateHUD();
+        return;
+    }
+
+    // Oxygen consumption in bunker
+    player.oxygen = Math.max(0, player.oxygen - 0.015);
+    if (player.oxygen <= 0) {
+        player.hp = Math.max(0, player.hp - 0.1);
+        if (player.hp <= 0) {
+            player.isAlive = false;
+            showEndGame(false, "Ви задихнулися токсичним газом бункера...");
+        }
+    }
+
+    // Movement speeds & Stamina
+    let moveSpeed = 0.032;
+    if (keys['ShiftLeft'] && player.stamina > 5) {
+        moveSpeed = 0.058;
+        player.stamina = Math.max(0, player.stamina - 0.5);
+    } else {
+        player.stamina = Math.min(100, player.stamina + 0.2);
+    }
+
+    // Battery drain
+    if (player.flashlight) {
+        player.battery = Math.max(0, player.battery - 0.025);
+        if (player.battery === 0) player.flashlight = false;
+    }
+
+    // Directional Movement
+    let dx = 0;
+    let dy = 0;
+
+    if (keys['KeyW'] || keys['ArrowUp']) {
+        dx += Math.cos(player.angle) * moveSpeed;
+        dy += Math.sin(player.angle) * moveSpeed;
+    }
+    if (keys['KeyS'] || keys['ArrowDown']) {
+        dx -= Math.cos(player.angle) * moveSpeed;
+        dy -= Math.sin(player.angle) * moveSpeed;
+    }
+    if (keys['KeyA']) {
+        dx += Math.sin(player.angle) * moveSpeed;
+        dy -= Math.cos(player.angle) * moveSpeed;
+    }
+    if (keys['KeyD']) {
+        dx -= Math.sin(player.angle) * moveSpeed;
+        dy += Math.cos(player.angle) * moveSpeed;
+    }
+
+    // Rotation via keyboard
+    if (keys['ArrowLeft']) player.angle -= 0.038;
+    if (keys['ArrowRight']) player.angle += 0.038;
+
+    // Collision detection with smooth wall sliding
+    const newX = player.x + dx;
+    const newY = player.y + dy;
+    const padding = 0.25;
+
+    if (MAP[Math.floor(player.y)][Math.floor(newX + Math.sign(dx) * padding)] === 0) {
+        player.x = newX;
+    }
+    if (MAP[Math.floor(newY + Math.sign(dy) * padding)][Math.floor(player.x)] === 0) {
+        player.y = newY;
+    }
+
+    // Footsteps audio
+    if (dx !== 0 || dy !== 0) {
+        stepTimer++;
+        if (stepTimer % (keys['ShiftLeft'] ? 12 : 20) === 0) {
+            audio.playFootstep();
+        }
+    }
+
+    // Check escape at exit door (Cell value 2)
+    if (MAP[Math.floor(player.y)][Math.floor(player.x)] === 2) {
+        if (reactorDeactivated) {
+            showEndGame(true, "ВІТАЄМО! Ви вимкнули реактор та вирвалися з Проклятого Бункера!");
+        } else {
+            showMessage("Гермодвері заблоковані! Потрібно вимкнути Реактор через кооп-термінал!");
+        }
+    }
+
+    // Interaction hint check
+    checkActionHint();
+    updateHUD();
+}
+
+function checkActionHint() {
+    const hint = document.getElementById('action-hint');
+    let show = false;
+
+    // Check near partner
+    if (partner.connected && partner.isDowned && Math.hypot(player.x - partner.x, player.y - partner.y) < 1.2) {
+        hint.innerText = `Натисніть [E] щоб врятувати ${partner.nickname}`;
+        show = true;
+    }
+
+    // Check near terminal
+    const pX = Math.floor(player.x);
+    const pY = Math.floor(player.y);
+    if (MAP[pY] && MAP[pY][pX] === 3) {
+        hint.innerText = "Натисніть [E] біля Терміналу Реактора";
+        show = true;
+    }
+
+    // Check near items
+    worldItems.forEach(item => {
+        if (!item.collected && Math.hypot(player.x - item.x, player.y - item.y) < 0.8) {
+            hint.innerText = item.type === 'note' ? "Натисніть [E] прочитати" : "Натисніть [E] підняти";
+            show = true;
+        }
+    });
+
+    if (show) hint.classList.remove('hidden');
+    else hint.classList.add('hidden');
+}
+
+function updateHUD() {
+    document.getElementById('hp-val').innerText = Math.round(player.hp) + '%';
+    document.getElementById('hp-bar').style.width = player.hp + '%';
+
+    document.getElementById('o2-val').innerText = Math.round(player.oxygen) + '%';
+    document.getElementById('o2-bar').style.width = player.oxygen + '%';
+
+    document.getElementById('stamina-val').innerText = Math.round(player.stamina) + '%';
+    document.getElementById('stamina-bar').style.width = player.stamina + '%';
+
+    document.getElementById('battery-val').innerText = Math.round(player.battery) + '%';
+    document.getElementById('battery-bar').style.width = player.battery + '%';
+}
+
+function updateMonster() {
+    if (!player.isAlive) return;
+
+    const dx = player.x - monster.x;
+    const dy = player.y - monster.y;
+    const distToPlayer = Math.hypot(dx, dy);
+
+    // Dynamic Horror Audio (Heartbeat)
+    if (distToPlayer < 5.0) {
+        document.getElementById('monster-warning').innerText = 'ПОПЕРЕДЖЕННЯ: ІСТОТА ПОРУЧ!';
+        document.getElementById('monster-warning').className = 'text-[10px] text-red-500 font-bold mt-1 uppercase tracking-wider text-right animate-pulse';
+        
+        if (Date.now() - lastHeartbeatTime > distToPlayer * 180 + 120) {
+            audio.playHeartbeat();
+            lastHeartbeatTime = Date.now();
+        }
+    } else {
+        document.getElementById('monster-warning').innerText = 'ТИША В БУНКЕРІ';
+        document.getElementById('monster-warning').className = 'text-[10px] text-gray-500 mt-1 uppercase tracking-wider text-right';
+    }
+
+    // Aggro Check: Flashlight or running reveals position
+    const isSpotted = (distToPlayer < 6.5 && player.flashlight) || distToPlayer < 2.2 || (keys['ShiftLeft'] && distToPlayer < 4.5);
+
+    if (isSpotted) {
+        monster.state = 'chase';
+        monster.targetX = player.x;
+        monster.targetY = player.y;
+    }
+
+    // Monster AI movement toward target
+    const targetDx = monster.targetX - monster.x;
+    const targetDy = monster.targetY - monster.y;
+    const targetDist = Math.hypot(targetDx, targetDy);
+
+    if (targetDist > 0.2) {
+        const moveX = (targetDx / targetDist) * monster.speed;
+        const moveY = (targetDy / targetDist) * monster.speed;
+
+        if (MAP[Math.floor(monster.y)][Math.floor(monster.x + moveX * 1.8)] === 0) monster.x += moveX;
+        if (MAP[Math.floor(monster.y + moveY * 1.8)][Math.floor(monster.x)] === 0) monster.y += moveY;
+    } else {
+        // Random patrol point
+        monster.state = 'patrol';
+        monster.targetX = Math.floor(Math.random() * (MAP_SIZE - 2)) + 1.5;
+        monster.targetY = Math.floor(Math.random() * (MAP_SIZE - 2)) + 1.5;
+    }
+
+    // Attack Mechanic
+    if (distToPlayer < 0.65) {
+        audio.playMonsterScreech();
+        triggerDamageEffect();
+
+        if (!player.isDowned) {
+            player.hp -= 45;
+            if (player.hp <= 0) {
+                player.isDowned = true;
+                player.hp = 100; // Downed health bar
+                showMessage("Істота вас поранила! Очікуйте на допомогу партнера!");
+            }
+        }
+    }
+}
+
+function triggerDamageEffect() {
+    const flash = document.getElementById('damage-flash');
+    flash.style.opacity = '1';
+    setTimeout(() => { flash.style.opacity = '0'; }, 300);
+}
+
+// 3D RAYCASTING ENGINE & SPRITE RENDERING
+function render3D() {
+    const width = canvas.width;
+    const height = canvas.height;
+    const fov = Math.PI / 3; // 60 deg FOV
+    const halfFov = fov / 2;
+    const numRays = width;
+    const deltaAngle = fov / numRays;
+
+    // Floor and Ceiling background gradient
+    ctx.fillStyle = '#030305';
+    ctx.fillRect(0, 0, width, height / 2); // Dark Ceiling
+    ctx.fillStyle = '#08080c';
+    ctx.fillRect(0, height / 2, width, height / 2); // Dark Floor
+
+    const zBuffer = new Float32Array(numRays);
+
+    // DDA Raycasting Loop
+    for (let i = 0; i < numRays; i++) {
+        const rayAngle = player.angle - halfFov + i * deltaAngle;
+        let distance = 0;
+        let hitWall = false;
+        let wallType = 1;
+
+        const cos = Math.cos(rayAngle);
+        const sin = Math.sin(rayAngle);
+
+        let checkX = player.x;
+        let checkY = player.y;
+
+        while (!hitWall && distance < 14) {
+            distance += 0.035;
+            checkX = player.x + cos * distance;
+            checkY = player.y + sin * distance;
+
+            const mapX = Math.floor(checkX);
+            const mapY = Math.floor(checkY);
+
+            if (mapX >= 0 && mapX < MAP_SIZE && mapY >= 0 && mapY < MAP_SIZE) {
+                if (MAP[mapY][mapX] > 0) {
+                    hitWall = true;
+                    wallType = MAP[mapY][mapX];
+                }
+            } else {
+                hitWall = true;
+            }
+        }
+
+        // Correct fisheye distortion
+        const correctedDist = distance * Math.cos(rayAngle - player.angle);
+        zBuffer[i] = correctedDist;
+
+        // Calculate wall height
+        const wallHeight = Math.min(height, (height / correctedDist));
+
+        // Light intensity from flashlight spotlight cone
+        const rayOffset = Math.abs(i - numRays / 2) / (numRays / 2);
+        const coneFactor = Math.max(0, 1 - rayOffset * 1.2);
+        
+        let lightIntensity = Math.max(0, 1 - (correctedDist / (player.flashlight ? (6.5 * coneFactor + 1.5) : 1.8)));
+        if (!player.flashlight) lightIntensity *= 0.15;
+
+        const wallTop = (height - wallHeight) / 2;
+
+        if (wallType === 2) {
+            // Blast Exit Door
+            ctx.fillStyle = `rgb(${220 * lightIntensity}, ${30 * lightIntensity}, ${30 * lightIntensity})`;
+        } else if (wallType === 3) {
+            // Reactor Terminal
+            ctx.fillStyle = `rgb(${30 * lightIntensity}, ${180 * lightIntensity}, ${200 * lightIntensity})`;
+        } else {
+            // Standard Concrete Wall
+            const shade = Math.floor(130 * lightIntensity);
+            ctx.fillStyle = `rgb(${shade}, ${shade * 0.95}, ${shade * 1.05})`;
+        }
+
+        ctx.fillRect(i, wallTop, 1, wallHeight);
+    }
+
+    // Render 3D Sprites (Items, Friend, Monster)
+    renderSprites(zBuffer, fov);
+    renderMinimap();
+}
+
+function renderSprites(zBuffer, fov) {
+    const sprites = [];
+
+    // Collectible World Items
+    worldItems.forEach(item => {
+        if (!item.collected) {
+            let color = '#ef4444';
+            let label = 'КЛЮЧ';
+            if (item.type === 'battery') { color = '#eab308'; label = 'БАТАРЕЯ'; }
+            else if (item.type === 'medkit') { color = '#22c55e'; label = 'АПТЕЧКА'; }
+            else if (item.type === 'note') { color = '#a855f7'; label = 'ЗАПИС'; }
+
+            sprites.push({ x: item.x, y: item.y, color: color, size: 0.3, label: label });
+        }
+    });
+
+    // Multiplayer Friend Sprite (Detailed 3D Silhouette Billboard)
+    if (partner.connected && partner.isAlive) {
+        sprites.push({
+            x: partner.x,
+            y: partner.y,
+            isPartner: true,
+            size: 0.75,
+            label: partner.nickname,
+            hp: partner.hp,
+            flashlight: partner.flashlight,
+            isDowned: partner.isDowned
+        });
+    }
+
+    // Monster Sprite (Entity 09)
+    sprites.push({
+        x: monster.x,
+        y: monster.y,
+        isMonster: true,
+        size: 0.85,
+        label: 'ІСТОТА 09'
+    });
+
+    // Sort sprites from farthest to nearest
+    sprites.sort((a, b) => {
+        const distA = Math.hypot(player.x - a.x, player.y - a.y);
+        const distB = Math.hypot(player.x - b.x, player.y - b.y);
+        return distB - distA;
+    });
+
+    sprites.forEach(sprite => {
+        const dx = sprite.x - player.x;
+        const dy = sprite.y - player.y;
+        let spriteAngle = Math.atan2(dy, dx) - player.angle;
+
+        while (spriteAngle < -Math.PI) spriteAngle += Math.PI * 2;
+        while (spriteAngle > Math.PI) spriteAngle -= Math.PI * 2;
+
+        const dist = Math.hypot(dx, dy);
+
+        if (dist > 0.25 && dist < 12) {
+            const screenX = (canvas.width / 2) + (spriteAngle / fov) * canvas.width;
+            const spriteSize = Math.min(canvas.height, (canvas.height / dist) * sprite.size);
+            const topY = (canvas.height - spriteSize) / 2;
+
+            const rayIdx = Math.floor(screenX);
+
+            if (rayIdx >= 0 && rayIdx < canvas.width && zBuffer[rayIdx] > dist) {
+                if (sprite.isMonster) {
+                    // Shadow Monster Visual
+                    ctx.fillStyle = '#020202';
+                    ctx.beginPath();
+                    ctx.arc(screenX, topY + spriteSize * 0.4, spriteSize * 0.35, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Glowing Red Eyes
+                    ctx.fillStyle = '#ff0000';
+                    ctx.shadowColor = '#red';
+                    ctx.shadowBlur = 10;
+                    ctx.fillRect(screenX - spriteSize * 0.12, topY + spriteSize * 0.3, spriteSize * 0.08, spriteSize * 0.08);
+                    ctx.fillRect(screenX + spriteSize * 0.04, topY + spriteSize * 0.3, spriteSize * 0.08, spriteSize * 0.08);
+                    ctx.shadowBlur = 0;
+                } 
+                else if (sprite.isPartner) {
+                    // Detailed Player Billboard (Head, Flashlight Beam, Health Bar)
+                    // Body silhouette
+                    ctx.fillStyle = sprite.isDowned ? '#7f1d1d' : '#1e293b';
+                    ctx.fillRect(screenX - spriteSize * 0.25, topY + spriteSize * 0.3, spriteSize * 0.5, spriteSize * 0.7);
+
+                    // Head
+                    ctx.fillStyle = '#334155';
+                    ctx.beginPath();
+                    ctx.arc(screenX, topY + spriteSize * 0.2, spriteSize * 0.2, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Headlamp / Flashlight beam
+                    if (sprite.flashlight) {
+                        ctx.fillStyle = 'rgba(254, 240, 138, 0.8)';
+                        ctx.beginPath();
+                        ctx.arc(screenX, topY + spriteSize * 0.18, spriteSize * 0.08, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                    // Floating Nickname & HP Bar Badge
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 10px Courier New';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(sprite.label, screenX, topY - 12);
+
+                    // Health Bar
+                    const barW = spriteSize * 0.8;
+                    ctx.fillStyle = '#0f172a';
+                    ctx.fillRect(screenX - barW / 2, topY - 8, barW, 4);
+                    ctx.fillStyle = sprite.isDowned ? '#ef4444' : '#22c55e';
+                    ctx.fillRect(screenX - barW / 2, topY - 8, barW * (sprite.hp / 100), 4);
+                } 
+                else {
+                    // Item Sprite Box
+                    ctx.fillStyle = sprite.color;
+                    ctx.fillRect(screenX - spriteSize / 2, topY + spriteSize * 0.3, spriteSize, spriteSize);
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 9px Courier New';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(sprite.label, screenX, topY + spriteSize * 0.2);
+                }
+            }
+        }
+    });
+}
+
+// MINIMAP RADAR RENDERING
+function renderMinimap() {
+    const miniCanvas = document.getElementById('minimap');
+    const mCtx = miniCanvas.getContext('2d');
+    const scale = miniCanvas.width / MAP_SIZE;
+
+    mCtx.fillStyle = '#050508';
+    mCtx.fillRect(0, 0, miniCanvas.width, miniCanvas.height);
+
+    // Draw bunker walls
+    for (let r = 0; r < MAP_SIZE; r++) {
+        for (let c = 0; c < MAP_SIZE; c++) {
+            if (MAP[r][c] === 1) {
+                mCtx.fillStyle = '#1f2937';
+                mCtx.fillRect(c * scale, r * scale, scale, scale);
+            } else if (MAP[r][c] === 2) {
+                mCtx.fillStyle = '#dc2626';
+                mCtx.fillRect(c * scale, r * scale, scale, scale);
+            } else if (MAP[r][c] === 3) {
+                mCtx.fillStyle = '#06b6d4';
+                mCtx.fillRect(c * scale, r * scale, scale, scale);
+            }
+        }
+    }
+
+    // Items on minimap
+    worldItems.forEach(item => {
+        if (!item.collected) {
+            mCtx.fillStyle = item.type === 'keycard' ? '#ef4444' : '#eab308';
+            mCtx.fillRect(item.x * scale - 1, item.y * scale - 1, 3, 3);
+        }
+    });
+
+    // Partner on minimap
+    if (partner.connected && partner.isAlive) {
+        mCtx.fillStyle = '#3b82f6';
+        mCtx.beginPath();
+        mCtx.arc(partner.x * scale, partner.y * scale, 2.5, 0, Math.PI * 2);
+        mCtx.fill();
+    }
+
+    // Player position dot & direction cone
+    mCtx.fillStyle = '#22c55e';
+    mCtx.beginPath();
+    mCtx.arc(player.x * scale, player.y * scale, 3, 0, Math.PI * 2);
+    mCtx.fill();
+
+    mCtx.strokeStyle = '#22c55e';
+    mCtx.beginPath();
+    mCtx.moveTo(player.x * scale, player.y * scale);
+    mCtx.lineTo(
+        (player.x + Math.cos(player.angle) * 1.5) * scale,
+        (player.y + Math.sin(player.angle) * 1.5) * scale
+    );
+    mCtx.stroke();
+}
+
+function resizeCanvas() {
+    canvas.width = Math.floor(window.innerWidth / 2.2);
+    canvas.height = Math.floor(window.innerHeight / 2.2);
+}
+
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function startGameLoop() {
+    function loop() {
+        if (player.isAlive) {
+            updatePlayer();
+            updateMonster();
+            render3D();
+            requestAnimationFrame(loop);
+        }
+    }
+    loop();
+}
+
+function showEndGame(victory, text) {
+    document.getElementById('end-screen').classList.remove('hidden');
+    document.getElementById('end-title').innerText = victory ? "ВИ ВТЕКЛИ!" : "ГРА ЗАКІНЧЕНА";
+    document.getElementById('end-title').className = victory 
+        ? "text-3xl font-black text-green-500 uppercase tracking-widest mb-3" 
+        : "text-3xl font-black text-red-600 uppercase tracking-widest mb-3";
+    document.getElementById('end-message').innerText = text;
 }
 </script>
 </body>
